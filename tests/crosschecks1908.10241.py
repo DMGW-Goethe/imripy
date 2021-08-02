@@ -11,27 +11,6 @@ m1 = 1e3 * ms.solar_mass_to_pc
 m2 = 1e1  * ms.solar_mass_to_pc
 D = 5e8
 
-# first, compare to Maggiore 2007
-sp_0 = ms.SystemProp(m1, m2, halo.ConstHalo(0.), D)
-
-a0 = 500.* sp_0.r_isco()
-afin = 1.*sp_0.r_isco()
-
-e0 = 0.9
-
-t_0, a_0, e_0 = inspiral.Classic.evolve_elliptic_binary(sp_0, a0, e0, afin, acc=1e-10)
-print(len(t_0), t_0, a_0, e_0)
-
-def g(e):
-    return e**(12./19.)/(1. - e**2) * (1. + 121./304. * e**2)**(870./2299.)
-
-plt.figure()
-plt.plot(e_0, a_0, label='numeric')
-plt.plot(e_0, a0 * g(e_0)/g(e0), label='analytic')
-plt.xlabel('e'); plt.ylabel('a')
-plt.yscale('log')
-plt.grid(); plt.legend()
-
 # Now to 1908.10241
 inspiral.Classic.ln_Lambda=10.
 rho_spike = 226 * ms.solar_mass_to_pc

@@ -38,10 +38,7 @@ def h_2(sp, t, omega_s, R, dbg=False, acc=1e-13):
         PhiTile : np.ndarray
             The phase that is left to observe at a given time step
         A   : np.ndarray
-            The amplitude of the waveform in over time
-
-    TODO:
-        - Include computation of h_cross
+            The amplitude of the waveform over time
     """
     # First, obtain mapping of gw frequency and time
     f_gw = omega_s / np.pi
