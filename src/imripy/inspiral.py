@@ -34,7 +34,7 @@ class Classic:
             out : float
                 The energy of the Keplerian orbit
         """
-        return  -sp.m_reduced()*(sp.mass(a) + sp.m2)/ a / 2.
+        return  -sp.m2 * sp.mass(a) / a / 2.
 
 
     def L_orbit(sp, a, e):
@@ -69,7 +69,9 @@ class Classic:
             out : float
                 The derivative of the orbital energy wrt to a of the Keplerian orbit
         """
-        return sp.m_reduced()/2.*((sp.mass(a) + sp.m2)/a**2 - 4.*np.pi*sp.halo.density(a)*a)
+        return sp.m2 * sp.mass(a) / 2. / a**2  * ( 1.
+                                                     - 4.*np.pi * sp.halo.density(a)* a**3
+                                                     )
 
 
     def dE_gw_dt(sp, a, e=0.):
@@ -295,13 +297,12 @@ class Classic:
             return Classic.mass_gain(sp, r, v_s) / v_s / (1.+e*np.cos(phi))**2
         return -(1.-e**2)**(3./2.)/2./np.pi *np.sqrt(sp.m_total() * a*(1.-e**2)) *  quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
-    def da_dt(sp, a, e=0., accretion=False):
+    def da_dt(sp, a, e=0., accretion=False, dm2_dt = 0.):
         """
         The function gives the secular time derivative of the semimajor axis a (or radius for a circular orbit) due to gravitational wave emission and dynamical friction
             of the smaller object on a Keplerian orbit with semimajor axis a and eccentricity e
         The equation is obtained by the relation
-            da/dt = dE/dt / (dE/da)
-        where dE/dt is the energy loss due to gravitational waves emission and dynamical friction
+            E = -m_1 * m_2 / 2a
 
         Parameters:
             sp (SystemProp) : The object describing the properties of the inspiralling system
@@ -313,10 +314,13 @@ class Classic:
             out : float
                 The secular time derivative of the semimajor axis
         """
-        return (    (Classic.dE_gw_dt(sp, a, e) + Classic.dE_df_dt(sp, a, e)
-                        + (Classic.dE_acc_dt(sp, a, e) if accretion else 0.)
-                        )
-                    / Classic.dE_orbit_da(sp, a, e))
+        dE_dt =  ( Classic.dE_gw_dt(sp, a, e) + Classic.dE_df_dt(sp, a, e)
+                     + (Classic.dE_acc_dt(sp, a, e) if accretion else 0.)
+                   )
+        dE_orbit_dm2 = - sp.mass(a)/2./a
+
+        return  (  ( dE_dt -  ( dE_orbit_dm2 * dm2_dt if accretion else 0.)  )
+                    / Classic.dE_orbit_da(sp, a, e) )
 
 
     def de_dt(sp, a, e=0., accretion=False, dm2_dt=0.):
@@ -331,6 +335,8 @@ class Classic:
             sp (SystemProp) : The object describing the properties of the inspiralling system
             a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
             e  (float)      : The eccentricity of the Keplerian orbit
+            accretion(bool) : A parameter wether to include accretion effects of the secondary black hole
+            dm2_dt (float)  : If accretion is included, the time derivative of the mass of the secondary black hole
 
         Returns:
             out : float
@@ -338,9 +344,9 @@ class Classic:
         """
         if e <= 0.:
             return 0.
-        return - (1.-e**2)/2./e *( (Classic.dE_gw_dt(sp, a, e) + Classic.dE_df_dt(sp, a, e))/Classic.E_orbit(sp, a, e) +
-                                    2. * (Classic.dL_gw_dt(sp, a, e) + Classic.dL_df_dt(sp, a, e))/Classic.L_orbit(sp, a, e)
-                                    - 2. * dm2_dt / sp.m_total() * (1. + 3./2. * sp.m1/sp.m2)
+        return - (1.-e**2)/2./e *( (Classic.dE_gw_dt(sp, a, e) + Classic.dE_df_dt(sp, a, e))/Classic.E_orbit(sp, a, e)
+                                    + 2. * (Classic.dL_gw_dt(sp, a, e) + Classic.dL_df_dt(sp, a, e))/Classic.L_orbit(sp, a, e)
+                                    -  (2. * dm2_dt / sp.m_total() * (1. + 3./2. * sp.m1/sp.m2) if accretion else 0.)
                                     )
 
 
