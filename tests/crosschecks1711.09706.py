@@ -49,11 +49,11 @@ def plotDiffEq(sp, r0, r1):
     c_gw, c_df, ctild = coeffs(sp)
     print(c_gw*ms.year_to_pc, c_df*ms.year_to_pc)
     l, = plt.loglog(r/sp.r_isco(), np.abs(inspiral.Classic.dE_gw_dt(sp, r))/inspiral.Classic.dE_orbit_da(sp, r), label=r'$dE_{gw}/dt / dE_{orbit}/dR$', alpha=0.5)
-    plt.loglog(r/sp.r_isco(), c_gw*f_gw(x, alpha) , label='$c_{gw}f_{gw}$', color=l.get_c(), linestyle='--')
+    plt.loglog(r/sp.r_isco(), c_gw*f_gw(x, alpha)/eps**(1./(3.-alpha)) , label='$c_{gw}f_{gw}$', color=l.get_c(), linestyle='--')
     l, = plt.loglog(r/sp.r_isco(), np.abs(inspiral.Classic.dE_df_dt(sp, r))/inspiral.Classic.dE_orbit_da(sp, r), label=r'$dE_{df}/dt / dE_{orbit}/dR$', alpha=0.5)
-    plt.loglog(r/sp.r_isco(), c_df* f_df(x, alpha), label='$c_{df}f_{df}$' , color=l.get_c(), linestyle='--')
+    plt.loglog(r/sp.r_isco(), c_df* f_df(x, alpha)/eps**(1./(3.-alpha)), label='$c_{df}f_{df}$' , color=l.get_c(), linestyle='--')
     l, = plt.loglog(r/sp.r_isco(), np.abs(inspiral.Classic.dE_acc_dt(sp, r))/inspiral.Classic.dE_orbit_da(sp, r), label=r'$dE_{acc}/dt / dE_{orbit}/dR$', alpha=0.5)
-    plt.loglog(r/sp.r_isco(), c_df* f_df(x, alpha)*b_A(sp, x, alpha), label='$c_{df}f_{df}b_A$' , color=l.get_c(), linestyle='--')
+    plt.loglog(r/sp.r_isco(), c_df* f_df(x, alpha)*b_A(sp, x, alpha)/eps**(1./(3.-alpha)), label='$c_{df}f_{df}b_A$' , color=l.get_c(), linestyle='--')
     plt.xlabel('$r/r_{ISCO}$')
 
 def J(x, alpha):
@@ -97,8 +97,6 @@ def phaseIntegrand(sp, f):
     return chi**(11./2.) / f**(8./3.) / K(x, alpha) / (1. + ctild*J(x,alpha)*(1. + b_A(sp, x, alpha)))
 
 def plotPhase(sp, t, R, omega_s):
-    #f = np.geomspace(omega_s[1], omega_s[-2], num=200)/np.pi
-    #f_isco = f[-1]
     f_gw = omega_s/np.pi
     f_isco = f_gw[-1]
     t_c = t[-1] + 5./256. * R[-1]**4/sp.m_total()**2 / sp.m_reduced()
@@ -109,11 +107,8 @@ def plotPhase(sp, t, R, omega_s):
     #plt.plot(f_gw*ms.year_to_pc*3.17e-8, PhiTild0, label=r'$\tilde{\Phi}_0^{analytic}$')
 
     t_of_f = interp1d(omega_s/np.pi, t, kind='cubic', bounds_error=True)
-    #omega_gw = UnivariateSpline(t, 2*omega_s, ext=1, k=5 )
     omega_gw = interp1d(t, 2*omega_s, kind='cubic', bounds_error=False, fill_value='extrapolate' )
-    #Phit = np.array([quad(lambda u: np.exp(u)*omega_gw(np.exp(u)), np.log(t[0]), np.log(y0))[0] for y0 in t ])
     Phit = np.cumsum([quad(lambda t: omega_gw(t), t[i-1], t[i], limit=500, epsrel=1e-13, epsabs=1e-13)[0] if not i == 0 else 0. for i in range(len(t)) ])
-    #Phi = interp1d(t, Phit - Phit[-1], kind='cubic', bounds_error=False, fill_value='extrapolate')(t_of_f(f_gw))
     Phi = Phit - Phit[-1]
 
     tpt = 2.*np.pi*f_gw * (t - t[-1])
@@ -125,16 +120,8 @@ def plotPhase(sp, t, R, omega_s):
     plt.plot(f_gw*ms.year_to_pc*3.17e-8, PhiTild, label=r'$\tilde{\Phi}^{code}$')
     plt.plot(f_gw*ms.year_to_pc*3.17e-8, DeltaPhi, label=r'$\Delta\tilde{\Phi}^{code}$')
 
-    #integrand = UnivariateSpline(np.log(f), f* f**(-8./3.)/L(sp, f), k=5)
-    #integrand = UnivariateSpline(np.log(f), f* phaseIntegrand(sp, f), k=5)
-    #Phi = integrand.antiderivative()
-    #Phi = np.array([quad(lambda f: np.exp(-5./3.*f)/L(sp, np.exp(f)), np.log(f_gw[0]), np.log(y0))[0] for y0 in f_gw ])
     Phi = np.cumsum([quad(lambda f: f**(-8./3.)/L(sp, f), f_gw[i-1], f_gw[i], limit=200, epsrel=1e-13, epsabs=1e-13)[0] if not i == 0 else 0. for i in range(len(f_gw)) ])
     Phi = 10./3. * (8.*np.pi*sp.m_chirp())**(-5./3.) * (Phi - Phi[-1])
-    #integrand2 = UnivariateSpline(np.log(f), f * f**(-11./3.)/L(sp, f), k=5)
-    #integrand2 = UnivariateSpline(np.log(f), phaseIntegrand(sp, f), k=5)
-    #tpt = integrand2.antiderivative()
-    #tpt = np.array([quad(lambda f: np.exp(-8./3.*f)/L(sp, np.exp(f)), np.log(f_gw[0]), np.log(y0))[0] for y0 in f_gw ])
     tpt = np.cumsum([quad(lambda f: f**(-11./3.)/L(sp, f), f_gw[i-1], f_gw[i], limit=200, epsrel=1e-13, epsabs=1e-13)[0] if not i==0 else 0. for i in range(len(f_gw)) ])
     tpt = 10./3. * (8.*np.pi*sp.m_chirp())**(-5./3.) * f_gw * ( tpt - tpt[-1])
     PhiTild = tpt - Phi
@@ -170,8 +157,7 @@ def plotWaveform(sp, t, R, omega_s):
 m1 = 1e3 *ms.solar_mass_to_pc
 m2 = 1. *ms.solar_mass_to_pc
 D = 1e3
-#sp_0 = ms.SystemProp(m1, m2, 1e3, ms.ConstHalo(0))
-sp_1 = ms.SystemProp(m1, m2, halo.SpikedNFW( 2.68e-13, 23.1, 0.54, 7./3.), D)
+sp_1 = ms.SystemProp(m1, m2, halo.Spike( 226*ms.solar_mass_to_pc, 0.54, 7./3.), D)
 
 
 plt.figure()
