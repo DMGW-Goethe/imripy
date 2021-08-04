@@ -14,28 +14,24 @@ def h_2(sp, t, omega_s, R, dbg=False, acc=1e-13):
         t  (array_like) : The time steps of the system evolution
         omega_s (array_like) : The corresponding orbital frequencies at the time steps
         R  (array_like) : The corresponding radii at the time steps
-        dbg (bool)      : A parameter describing changing the returned variables
+        dbg (bool)      : A parameter returning intermediate variables
         acc    (float)  : An accuracy parameter that is passed to the integration function
 
     Returns:
     For dbg = False
         f_gw : np.ndarray
             The frequencies of the gravitational wave emission at the corresponding time steps
-        h : np.ndarray
-            The amplitude of the waveform in the fourier domain at the corresponding time steps
-        Psi : np.ndarry
+        h_n_plus : np.ndarray
+            The amplitude of the plus polarization waveform in the fourier domain at the corresponding time steps
+        h_n_cross : np.ndarray
+            The amplitude of the cross polarization waveform in the fourier domain at the corresponding time steps
+        Psi : np.ndarray
             The phase of the waveform in the fourier domain at the corresponding time steps
 
     For dbg = True
-        f_gw : np.ndarray
-            The frequencies of the gravitational wave emission at the corresponding time steps
-        h : np.ndarray
-            The amplitude of the waveform in the fourier domain at the corresponding time steps
-        Psi : np.ndarray
-            The phase of the waveform in the fourier domain at the corresponding time steps
         t_of_f : scipy.interp1d
             The interpolation object that maps time and frequency in the inspiral frame
-        PhiTile : np.ndarray
+        PhiTild : np.ndarray
             The phase that is left to observe at a given time step
         A   : np.ndarray
             The amplitude of the waveform over time
@@ -45,11 +41,12 @@ def h_2(sp, t, omega_s, R, dbg=False, acc=1e-13):
     t_of_f = interp1d(f_gw, t, kind='cubic', bounds_error=False, fill_value='extrapolate')
 
     # Next, get the accumulated phase Phi
-    omega_gw= UnivariateSpline(t, 2*omega_s, ext=1, k=5 )
-    Phi = np.cumsum([quad(lambda t: omega_gw(t), t[i-1], t[i], limit=500, epsrel=acc, epsabs=acc)[0] if not i == 0 else 0. for i in range(len(t)) ])
+    omega_gw = 2.*omega_s
+    omega_gw_interp = interp1d(t, omega_gw, kind='cubic', bounds_error=True)
+    Phi = np.cumsum([quad(lambda t: omega_gw_interp(t), t[i-1], t[i], limit=100, epsrel=acc, epsabs=acc)[0] if not i == 0 else 0. for i in range(len(t)) ])
 
     # and the derivative of omega_gw
-    domega_gw= omega_gw.derivative()
+    domega_gw = np.gradient(omega_gw, t)
 
     # Calculate PhiTilde
     Phi = Phi - Phi[-1]
@@ -64,8 +61,8 @@ def h_2(sp, t, omega_s, R, dbg=False, acc=1e-13):
     Psi = 2.*np.pi*f_gw*sp.D + PhiTild - np.pi/4.
 
     # This gives us h on the f grid (accounting for redshift)
-    h_plus =  1./2. *  A * np.sqrt(2*np.pi * (1+sp.z())**2 / domega_gw(t_of_f(f_gw))) * (1. + np.cos(sp.inclination_angle)**2)/2.
-    h_cross =  1./2. *  A * np.sqrt(2*np.pi * (1+sp.z())**2 / domega_gw(t_of_f(f_gw))) * np.cos(sp.inclination_angle)
+    h_plus =  1./2. *  A * np.sqrt(2*np.pi * (1+sp.z())**2 / domega_gw) * (1. + np.cos(sp.inclination_angle)**2)/2.
+    h_cross =  1./2. *  A * np.sqrt(2*np.pi * (1+sp.z())**2 / domega_gw) * np.cos(sp.inclination_angle)
 
     if dbg:
         return f_gw/(1.+sp.z()), h_plus, h_cross, Psi, t_of_f, PhiTild, A
@@ -73,7 +70,7 @@ def h_2(sp, t, omega_s, R, dbg=False, acc=1e-13):
     return f_gw/(1.+sp.z()), h_plus, h_cross, Psi
 
 
-def h_n(n, sp, t, a, e, acc=1e-13):
+def h_n(n, sp, t, a, e, dbg=False, acc=1e-13):
     """
     This function calculates the gravitational waveform h^n_+ for eccentric inspirals according to eq (101) in https://arxiv.org/pdf/2107.00741.pdf
     Parameters:
@@ -81,6 +78,7 @@ def h_n(n, sp, t, a, e, acc=1e-13):
         t  (array_like) : The time steps of the system evolution
         a  (array_like) : The corresponding semi-major axes at the time steps
         e  (array_like) : The corresponding eccentricities at the time steps
+        dbg (bool)      : A parameter returning intermediate variables
         acc    (float)  : An accuracy parameter that is passed to the integration function
 
     Returns:
@@ -94,6 +92,11 @@ def h_n(n, sp, t, a, e, acc=1e-13):
         Psi_n : np.ndarry
             The phase of the waveform in the fourier domain of the nth harmonic at the corresponding time steps
 
+    For dbg = True
+        PhiTild_n : np.ndarray
+            The phase that is left to observe at a given time step
+        A_n   : np.ndarray
+            The amplitude of the waveform over time
     TODO:
         Check redshift inclusion
     """
@@ -121,26 +124,31 @@ def h_n(n, sp, t, a, e, acc=1e-13):
 
     # Calculate the mean anomaly of the orbit
     F_interp = interp1d(t, F, kind='cubic', bounds_error=True)
-    mean_anomaly = np.cumsum([quad(F_interp, t[i-1], t[i], epsabs=acc, epsrel=acc, limit=100)[0] if i > 0 else 0. for i in range(len(t))])
+    mean_anomaly = 2.*np.pi*  np.cumsum([quad(F_interp, t[i-1], t[i], epsabs=acc, epsrel=acc, limit=100)[0] if i > 0 else 0. for i in range(len(t))])
 
     # calculate coalescense time left at the end of the a,e data
-    t_coal =  5./256. * a[-1]**4/sp.m_total()**2 /sp.m_reduced()
+    t_coal =  5./256. * a[-1]**4/sp.m_total()**2 /sp.m_reduced()    # The circular case
     def g(e):
         return e**(12./19.)/(1. - e**2) * (1. + 121./304. * e**2)**(870./2299.)
-    t_coal = t_coal * 48./19. / g(e[-1])**4 * quad(lambda e: g(e)**4 *(1-e**2)**(5./2.) /e/(1. + 121./304. * e**2), 0., e[-1], limit=100)[0]   # The inspiral time according to Maggiore (2007)
+    t_coal = t_coal * 48./19. / g(e[-1])**4 * quad(lambda e: g(e)**4 *(1-e**2)**(5./2.) /e/(1. + 121./304. * e**2), 0., e[-1], limit=100)[0]   # The eccentric inspiral time according to Maggiore (2007)
+    t_coal = t[-1] + t_coal
 
     # Now we can calculate the phase of the stationary phase approximation
-    Psi_n = + 2.*np.pi * F/n * (t - t_coal) - n*mean_anomaly - np.pi/4.
+    PhiTild_n =  2.*np.pi * n * F * (t - t_coal) - n * (mean_anomaly - mean_anomaly[-1])
+    Psi_n = PhiTild_n - np.pi/4.   # TODO: Check inclusion of D term
 
     # Amplitude of the signal
-    A = - sp.redshifted_m_chirp()**(5./3.) / sp.D / 2. * (2.*np.pi * F/(1.+sp.z()))**(2./3.) / np.sqrt(n*F_dot/(1.+sp.z())**2)
+    A_n = - sp.redshifted_m_chirp()**(5./3.) / sp.D / 2. * (2.*np.pi * F/(1.+sp.z()))**(2./3.) / np.sqrt(n*F_dot/(1.+sp.z())**2)
 
     # the actual waveform
-    h_n_plus  = A * ( C_n_plus(n, sp, e)   +  1.j  * S_n_plus(n, sp, e))
-    h_n_cross = A * ( C_n_cross(n, sp, e)  +  1.j  * S_n_cross(n, sp, e))
+    h_n_plus  = A_n * ( C_n_plus(n, sp, e)   +  1.j  * S_n_plus(n, sp, e))
+    h_n_cross = A_n * ( C_n_cross(n, sp, e)  +  1.j  * S_n_cross(n, sp, e))
 
     # the corresponding observed frequencies
     f_gw = n*F / (1.+sp.z())
+
+    if dbg:
+        return f_gw, h_n_plus, h_n_cross, Psi_n, PhiTild_n, A_n
 
     return f_gw, h_n_plus, h_n_cross, Psi_n
 
