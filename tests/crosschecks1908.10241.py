@@ -11,7 +11,8 @@ m1 = 1e3 * ms.solar_mass_to_pc
 m2 = 1e1  * ms.solar_mass_to_pc
 D = 5e8
 
-# Now to 1908.10241
+sp_0 = ms.SystemProp(m1, m2, halo.ConstHalo(0.), D)
+
 inspiral.Classic.ln_Lambda=10.
 rho_spike = 226 * ms.solar_mass_to_pc
 r_spike = 0.54
