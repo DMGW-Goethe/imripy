@@ -65,35 +65,51 @@ class SystemProp:
         """
         return 6.*self.m1
 
-    def m_reduced(self):
+    def m_reduced(self, r=0.):
         """
         The function returns the reduced mass of the binary system of m1 and m2
+            if r > 0 then the dark matter halo mass is included in the calculation
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the mass
 
         Returns:
             out : float
                 The reduced mass
         """
-        return self.m1*self.m2/(self.m1+self.m2)
+        return np.where(r > 0., self.mass(r)*self.m2 / (self.mass(r) + self.m2),
+                                self.m1 * self.m2 / ( self.m1 + self.m2))
 
-    def redshifted_m_reduced(self):
+    def redshifted_m_reduced(self, r=0.):
         """
         The function returns the redshifted reduced mass of the binary system of m1 and m2
+            if r > 0 then the dark matter halo mass is included in the calculation
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the mass
 
         Returns:
             out : float
                 The redshifted reduced mass
         """
-        return (1. + self.z()) * self.m_reduced()
+        return (1. + self.z()) * self.m_reduced(r)
 
-    def m_total(self):
+    def m_total(self, r=0.):
         """
         The function returns the total mass of the binary system of m1 and m2
+            if r > 0 then the dark matter halo mass is included in the calculation
 
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the mass
         Returns:
             out : float
                 The total mass
         """
-        return (self.m1+self.m2)
+        return np.where( r > 0., self.mass(r) + self.m2,
+                                self.m1+ self.m2)
 
     def m_chirp(self):
         """
@@ -103,7 +119,7 @@ class SystemProp:
             out : float
                 The chirp mass
         """
-        return self.m_reduced()**(3./5.) * (self.m1 + self.m2)**(2./5.)
+        return self.m_reduced()**(3./5.) * self.m_total()**(2./5.)
 
     def redshifted_m_chirp(self):
         """
@@ -139,6 +155,8 @@ class SystemProp:
                 The enclosed mass
         """
         return np.ones(np.shape(r))*self.m1 + self.halo.mass(r)
+        #return np.ones(np.shape(r))*self.m1
+        # If you want to exclude the halo mass from the energy and angular momentum calculations us the latter
 
     def omega_s(self, r):
         """

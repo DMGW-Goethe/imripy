@@ -43,7 +43,7 @@ def h_2(sp, t, omega_s, R, dbg=False, acc=1e-13):
     # Next, get the accumulated phase Phi
     omega_gw = 2.*omega_s
     omega_gw_interp = interp1d(t, omega_gw, kind='cubic', bounds_error=True)
-    Phi = np.cumsum([quad(lambda t: omega_gw_interp(t), t[i-1], t[i], limit=100, epsrel=acc, epsabs=acc)[0] if not i == 0 else 0. for i in range(len(t)) ])
+    Phi = np.cumsum([quad(lambda t: omega_gw_interp(t), t[i-1], t[i], limit=200, epsrel=acc, epsabs=acc)[0] if not i == 0 else 0. for i in range(len(t)) ])
 
     # and the derivative of omega_gw
     domega_gw = np.gradient(omega_gw, t)
@@ -119,12 +119,12 @@ def h_n(n, sp, t, a, e, dbg=False, acc=1e-13):
                             * ( -2.*(1.-e**2)*n*jv(n, n*e) +  e*(jv(n-1, n*e) - jv(n+1, n*e)) ) )
 
     # Calculate the Keplerian orbital frequency and its derivative over time
-    F = np.sqrt(sp.m_total()/a**3) / 2./np.pi
+    F = np.sqrt(sp.m_total(a)/a**3) / 2./np.pi
     F_dot = np.gradient(F, t)
 
     # Calculate the mean anomaly of the orbit
     F_interp = interp1d(t, F, kind='cubic', bounds_error=True)
-    mean_anomaly = 2.*np.pi*  np.cumsum([quad(F_interp, t[i-1], t[i], epsabs=acc, epsrel=acc, limit=100)[0] if i > 0 else 0. for i in range(len(t))])
+    mean_anomaly = 2.*np.pi*  np.cumsum([quad(F_interp, t[i-1], t[i], epsabs=acc, epsrel=acc, limit=200)[0] if i > 0 else 0. for i in range(len(t))])
 
     # calculate coalescense time left at the end of the a,e data
     t_coal =  5./256. * a[-1]**4/sp.m_total()**2 /sp.m_reduced()    # The circular case
@@ -139,6 +139,7 @@ def h_n(n, sp, t, a, e, dbg=False, acc=1e-13):
 
     # Amplitude of the signal
     A_n = - sp.redshifted_m_chirp()**(5./3.) / sp.D / 2. * (2.*np.pi * F/(1.+sp.z()))**(2./3.) / np.sqrt(n*F_dot/(1.+sp.z())**2)
+    A_n = np.where(F_dot == 0., 0., A_n)
 
     # the actual waveform
     h_n_plus  = A_n * ( C_n_plus(n, sp, e)   +  1.j  * S_n_plus(n, sp, e))

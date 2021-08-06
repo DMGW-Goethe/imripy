@@ -34,7 +34,7 @@ class Classic:
             out : float
                 The energy of the Keplerian orbit
         """
-        return  -sp.m2 * sp.mass(a) / a / 2.
+        return  - sp.m_total(a)*sp.m_reduced(a) / a / 2.
 
 
     def L_orbit(sp, a, e):
@@ -51,7 +51,7 @@ class Classic:
             out : float
                 The angular momentum of the Keplerian orbit
         """
-        return np.sqrt( -(1. - e**2) * sp.m_total()**2 * sp.m_reduced()**3 / 2. / Classic.E_orbit(sp, a, e))
+        return np.sqrt( -(1. - e**2) * sp.m_reduced(a)**3 * sp.m_total(a)**2 / 2. / Classic.E_orbit(sp, a, e))
 
 
     def dE_orbit_da(sp, a, e=0.):
@@ -70,7 +70,7 @@ class Classic:
                 The derivative of the orbital energy wrt to a of the Keplerian orbit
         """
         return sp.m2 * sp.mass(a) / 2. / a**2  * ( 1.
-                                                     - 4.*np.pi * sp.halo.density(a)* a**3
+                                                     - 4.*np.pi * sp.halo.density(a)* a**3 / sp.mass(a)
                                                      )
 
 
@@ -89,7 +89,7 @@ class Classic:
             out : float
                 The energy loss due to radiation of gravitational waves of an Keplerian orbit
         """
-        return -32./5. * sp.m_reduced()**2 * sp.m_total()**3 / a**5  / (1. - e**2)**(7./2.) * (1. + 73./24. * e**2 + 37./96. * e**4)
+        return -32./5. * sp.m_reduced(a)**2 * sp.m_total(a)**3 / a**5  / (1. - e**2)**(7./2.) * (1. + 73./24. * e**2 + 37./96. * e**4)
 
 
     def F_df(sp, r, v):
@@ -129,7 +129,7 @@ class Classic:
             out : float
                 The energy loss due to dynamical friction
         """
-        if e <= 0.:
+        if e == 0.:
             v_s = sp.omega_s(a)*a
             return - Classic.F_df(sp, a, v_s)*v_s
         else:
@@ -137,7 +137,7 @@ class Classic:
                 return np.array([Classic.dE_df_dt(sp, a_i, e) for a_i in a])
             def integrand(phi):
                 r = a*(1. - e**2)/(1. + e*np.cos(phi))
-                v_s = np.sqrt(sp.m_total() *(2./r - 1./a))
+                v_s = np.sqrt(sp.m_total(a) *(2./r - 1./a))
                 return Classic.F_df(sp, r, v_s)*v_s / (1.+e*np.cos(phi))**2
             return -(1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
@@ -193,7 +193,7 @@ class Classic:
             out : float
                 The mass gain due to accretion on an orbit
         """
-        if e <= 0.:
+        if e == 0.:
             v_s = sp.omega_s(a)*a
             return Classic.mass_gain(sp, a, v_s)
         else:
@@ -201,7 +201,7 @@ class Classic:
                 return np.array([Classic.dm2_dt(sp, a_i, e) for a_i in a])
             def integrand(phi):
                 r = a*(1. - e**2)/(1. + e*np.cos(phi))
-                v_s = np.sqrt(sp.m_total() *(2./r - 1./a))
+                v_s = np.sqrt(sp.m_total(a) *(2./r - 1./a))
                 return Classic.mass_gain(sp, r, v_s) / (1.+e*np.cos(phi))**2
             return (1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
@@ -223,7 +223,7 @@ class Classic:
                 The energy loss due to accretion
         """
 
-        if e <= 0.:
+        if e == 0.:
             v_s = sp.omega_s(a)*a
             return - Classic.mass_gain(sp, a, v_s)*v_s**2
         else:
@@ -231,9 +231,29 @@ class Classic:
                 return np.array([Classic.dE_acc_dt(sp, a_i, e) for a_i in a])
             def integrand(phi):
                 r = a*(1. - e**2)/(1. + e*np.cos(phi))
-                v_s = np.sqrt(sp.m_total() *(2./r - 1./a))
+                v_s = np.sqrt(sp.m_total(a) *(2./r - 1./a))
                 return Classic.mass_gain(sp, r, v_s)*v_s**2 / (1.+e*np.cos(phi))**2
             return -(1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
+
+
+    def dE_dt(sp, a, e=0., accretion=False):
+        """
+        The function gives the total energy loss of the orbiting small black hole due to the dissipative effects
+           on a Keplerian orbit with semimajor axis a and eccentricity e
+
+        Parameters:
+            sp (SystemProp) : The object describing the properties of the inspiralling system
+            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
+            e  (float)      : The eccentricity of the Keplerian orbit
+            accretion (bool): A boolean deciding wether to include accretion effects
+
+        Returns:
+            out : float
+                The total energy loss
+        """
+        return ( Classic.dE_gw_dt(sp, a, e) + Classic.dE_df_dt(sp, a, e)
+                     + (Classic.dE_acc_dt(sp, a, e) if accretion else 0.)
+                   )
 
 
     def dL_gw_dt(sp, a, e):
@@ -251,7 +271,7 @@ class Classic:
             out : float
                 The angular momentum loss due to radiation of gravitational waves
         """
-        return -32./5. * sp.m_reduced()**2 * sp.m_total()**(5./2.) / a**(7./2.)  / (1. - e**2)**2 * (1. + 7./8.*e**2)
+        return -32./5. * sp.m_reduced(a)**2 * sp.m_total(a)**(5./2.) / a**(7./2.)  / (1. - e**2)**2 * (1. + 7./8.*e**2)
 
 
     def dL_df_dt(sp, a, e):
@@ -271,9 +291,9 @@ class Classic:
         """
         def integrand(phi):
             r = a*(1. - e**2)/(1. + e*np.cos(phi))
-            v_s = np.sqrt(sp.m_total() *(2./r - 1./a))
+            v_s = np.sqrt(sp.m_total(a) *(2./r - 1./a))
             return Classic.F_df(sp, r, v_s) / v_s / (1.+e*np.cos(phi))**2
-        return -(1.-e**2)**(3./2.)/2./np.pi *np.sqrt(sp.m_total() * a*(1.-e**2)) *  quad(integrand, 0., 2.*np.pi, limit = 100)[0]
+        return -(1.-e**2)**(3./2.)/2./np.pi *np.sqrt(sp.m_total(a)* a*(1.-e**2)) *  quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
 
     def dL_acc_dt(sp, a, e):
@@ -293,9 +313,33 @@ class Classic:
         """
         def integrand(phi):
             r = a*(1. - e**2)/(1. + e*np.cos(phi))
-            v_s = np.sqrt(sp.m_total() *(2./r - 1./a))
+            v_s = np.sqrt(sp.m_total(a) *(2./r - 1./a))
             return Classic.mass_gain(sp, r, v_s) / v_s / (1.+e*np.cos(phi))**2
-        return -(1.-e**2)**(3./2.)/2./np.pi *np.sqrt(sp.m_total() * a*(1.-e**2)) *  quad(integrand, 0., 2.*np.pi, limit = 100)[0]
+        return -(1.-e**2)**(3./2.)/2./np.pi *np.sqrt(sp.m_total(a) * a*(1.-e**2)) *  quad(integrand, 0., 2.*np.pi, limit = 100)[0]
+
+
+    def dL_dt(sp, a, e, accretion=False):
+        """
+        The function gives the total angular momentum loss of the secondary object
+            on a Keplerian orbit with semimajor axis a and eccentricity e
+
+        Parameters:
+            sp (SystemProp) : The object describing the properties of the inspiralling system
+            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
+            e  (float)      : The eccentricity of the Keplerian orbit
+            accretion (bool): A boolean deciding wether to include accretion effects
+
+        Returns:
+            out : float
+                The total angular momentum loss
+        """
+        dL_gw_dt = Classic.dL_gw_dt(sp, a, e)
+        dL_df_dt = Classic.dL_df_dt(sp, a, e)
+        if accretion:
+            dL_acc_dt = Classic.dL_acc_dt(sp, a, e)
+        return  (dL_gw_dt + dL_df_dt
+                  + (dL_acc_dt if accretion else 0.)
+                 )
 
     def da_dt(sp, a, e=0., accretion=False, dm2_dt = 0.):
         """
@@ -314,16 +358,14 @@ class Classic:
             out : float
                 The secular time derivative of the semimajor axis
         """
-        dE_dt =  ( Classic.dE_gw_dt(sp, a, e) + Classic.dE_df_dt(sp, a, e)
-                     + (Classic.dE_acc_dt(sp, a, e) if accretion else 0.)
-                   )
+        dE_dt = Classic.dE_dt(sp, a, e, accretion)
         dE_orbit_dm2 = - sp.mass(a)/2./a
 
-        return  (  ( dE_dt -  ( dE_orbit_dm2 * dm2_dt if accretion else 0.)  )
+        return  (  ( dE_dt - dE_orbit_dm2 * dm2_dt   )
                     / Classic.dE_orbit_da(sp, a, e) )
 
 
-    def de_dt(sp, a, e=0., accretion=False, dm2_dt=0.):
+    def de_dt(sp, a, e, da_dt, accretion=False, dm2_dt=0.):
         """
         The function gives the secular time derivative of the eccentricity due to gravitational wave emission and dynamical friction
             of the smaller object on a Keplerian orbit with semimajor axis a and eccentricity e
@@ -344,9 +386,15 @@ class Classic:
         """
         if e <= 0.:
             return 0.
-        return - (1.-e**2)/2./e *( (Classic.dE_gw_dt(sp, a, e) + Classic.dE_df_dt(sp, a, e))/Classic.E_orbit(sp, a, e)
-                                    + 2. * (Classic.dL_gw_dt(sp, a, e) + Classic.dL_df_dt(sp, a, e))/Classic.L_orbit(sp, a, e)
-                                    -  (2. * dm2_dt / sp.m_total() * (1. + 3./2. * sp.m1/sp.m2) if accretion else 0.)
+
+        g = 1. / sp.m_total(a)**2 / sp.m_reduced(a)**3
+        dg_dm2 = -2. / sp.mass(a)**3 / sp.m2**3 * (1. + 3./2. * sp.m2 / sp.mass(a))
+        #dg_da = -2. / sp.mass(a)**3 / sp.m2**3 * (1. + 3./2. * sp.mass(a) / sp.m2) * (4.*np.pi*a**2 * sp.halo.density(a))
+        dg_da = 0.   # TODO: Check this term
+
+        return - (1.-e**2)/2./e *(         Classic.dE_dt(sp, a, e, accretion) / Classic.E_orbit(sp, a, e)
+                                    + 2. * Classic.dL_dt(sp, a, e, accretion) / Classic.L_orbit(sp, a, e)
+                                    + (dg_dm2 * dm2_dt + dg_da * da_dt)/g
                                     )
 
 
@@ -371,6 +419,7 @@ class Classic:
                 The time steps the integration returns. The first is t_0
             R : np.ndarray
                 The corresponding radii at the given time steps
+         if accretion=True
             m2 : np.ndarray if accretion is True
                 The corresponding secondary black hole masses
         """
@@ -378,6 +427,7 @@ class Classic:
         if t_fin is None:
             t_fin = 1.1 * t_coal *( 1. - R_fin**4 / R_0**4)         # This is 10% above the maximum time the system should reach R_fin
 
+        print(t_fin)
         R_scale = R_fin                 # It's nice for the differential solver to rescale the equations
         t_scale = t_fin
         if accretion:
@@ -459,6 +509,9 @@ class Classic:
                 The corresponding semimajor axes at the given time steps
             e : np.ndarray
                 The corresponding eccentricities at the given time steps
+         if accretion=True
+            m2 : np.ndarray if accretion is True
+                The corresponding secondary black hole masses
         """
         def g(e):
             return e**(12./19.)/(1. - e**2) * (1. + 121./304. * e**2)**(870./2299.)
@@ -491,7 +544,7 @@ class Classic:
             if accretion:
                 dm2_dt = t_scale/m_scale * Classic.dm2_dt(sp, a, e)
             da_dt = t_scale/a_scale * Classic.da_dt(sp, a, e, accretion=accretion)
-            de_dt = t_scale * Classic.de_dt(sp, a, e, accretion=accretion, dm2_dt=(dm2_dt*m_scale/t_scale if accretion else 0.))
+            de_dt = t_scale * Classic.de_dt(sp, a, e, da_dt*a_scale/t_scale, accretion=accretion, dm2_dt=(dm2_dt*m_scale/t_scale if accretion else 0.))
 
             if verbose:
                 toc = time.perf_counter()
@@ -515,7 +568,8 @@ class Classic:
                                                                                         method = 'RK45', atol=acc, rtol=acc)
 
         a = Int.y[0]*a_scale
-        e = Int.y[1]
+        e = np.clip(Int.y[1], 1e-50, None)
+        #e = Int.y[1]
         t = Int.t*t_scale
         if accretion:
             m2 = Int.y[2]*m_scale
