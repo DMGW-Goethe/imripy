@@ -157,7 +157,9 @@ class Classic:
         TODO:
             Check 1+v**2 vs 1-v**2
         """
-        return 16. * np.pi * sp.m2**2 / v**2  * (1. + v**2)
+        #return 16. * np.pi * sp.m2**2 / v**2  * (1. + v**2)
+        return (np.pi * sp.m2**2. / v**2.) * ((8. * (1. - v**2.)**3.) / (4. * (1. - 4. * v**2. + (1. + 8. * v**2.)**(1./2.)) * (3. - (1. + 8. * v**2.)**(1./2.))**2.))
+
 
     def mass_gain(sp, r, v):
         """
