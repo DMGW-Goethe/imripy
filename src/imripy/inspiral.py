@@ -153,15 +153,12 @@ class Classic:
         Returns:
             out : float
                 The black hole cross section
-
-        TODO:
-            Check 1+v**2 vs 1-v**2
         """
         #return 16. * np.pi * sp.m2**2 / v**2  * (1. + v**2)
-        return (np.pi * sp.m2**2. / v**2.) * ((8. * (1. - v**2.)**3.) / (4. * (1. - 4. * v**2. + (1. + 8. * v**2.)**(1./2.)) * (3. - (1. + 8. * v**2.)**(1./2.))**2.))
+        return (np.pi * sp.m2**2. / v**2.) * (8. * (1. - v**2.))**3 / (4. * (1. - 4. * v**2. + (1. + 8. * v**2.)**(1./2.)) * (3. - (1. + 8. * v**2.)**(1./2.))**2.)
 
 
-    def mass_gain(sp, r, v):
+    def dm2_dt(sp, r, v):
         """
         The function gives the mass gain due to accretion of the small black hole inside of the dark matter halo
            for a small black hole with relative velocity v to the halo at radius r
@@ -179,11 +176,11 @@ class Classic:
         return sp.halo.density(r) * v * Classic.BH_cross_section(sp, v)
 
 
-    def dm2_dt(sp, a, e=0.):
+    def dm2_dt_avg(sp, a, e=0.):
         """
         The function gives the mass gain due to accretion of the small black hole inside of the dark matter halo
            on a Keplerian orbit with semimajor axis a and eccentricity e
-        For a circular orbit the mass_gain function with the corresponding orbital velocity is used
+        For a circular orbit the dm2_dt function with the corresponding orbital velocity is used
             for an elliptic orbit the average of the expression is used
 
         Parameters:
@@ -197,22 +194,38 @@ class Classic:
         """
         if e == 0.:
             v_s = sp.omega_s(a)*a
-            return Classic.mass_gain(sp, a, v_s)
+            return Classic.dm2_dt(sp, a, v_s)
         else:
             if  isinstance(a, (collections.Sequence, np.ndarray)):
                 return np.array([Classic.dm2_dt(sp, a_i, e) for a_i in a])
             def integrand(phi):
                 r = a*(1. - e**2)/(1. + e*np.cos(phi))
                 v_s = np.sqrt(sp.m_total(a) *(2./r - 1./a))
-                return Classic.mass_gain(sp, r, v_s) / (1.+e*np.cos(phi))**2
+                return Classic.dm2_dt(sp, r, v_s) / (1.+e*np.cos(phi))**2
             return (1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
+
+    def F_acc(sp, r, v):
+        """
+        The function gives the force of the accretion of an object inside a dark matter halo at radius r (since we assume a spherically symmetric halo)
+            and with velocity v
+
+        Parameters:
+            sp (SystemProp) : The object describing the properties of the inspiralling system
+            r  (float)      : The radius of the orbiting object
+            v  (float)      : The speed of the orbiting object wrt to the dark matter halo
+
+        Returns:
+            out : float
+                The magnitude of the accretion force
+        """
+        return Classic.dm2_dt(sp, r, v) * v
 
 
     def dE_acc_dt(sp, a, e=0.):
         """
         The function gives the energy loss of the orbiting small black hole due to accretion of the dark matter halo
            on a Keplerian orbit with semimajor axis a and eccentricity e
-        For a circular orbit the mass_gain function with the corresponding orbital velocity is used
+        For a circular orbit the dm2_dt function with the corresponding orbital velocity is used
             for an elliptic orbit the average of the expression is used
 
         Parameters:
@@ -227,14 +240,14 @@ class Classic:
 
         if e == 0.:
             v_s = sp.omega_s(a)*a
-            return - Classic.mass_gain(sp, a, v_s)*v_s**2
+            return - Classic.F_acc(sp, a, v_s)*v_s
         else:
             if  isinstance(a, (collections.Sequence, np.ndarray)):
                 return np.array([Classic.dE_acc_dt(sp, a_i, e) for a_i in a])
             def integrand(phi):
                 r = a*(1. - e**2)/(1. + e*np.cos(phi))
                 v_s = np.sqrt(sp.m_total(a) *(2./r - 1./a))
-                return Classic.mass_gain(sp, r, v_s)*v_s**2 / (1.+e*np.cos(phi))**2
+                return Classic.F_acc(sp, r, v_s)*v_s / (1.+e*np.cos(phi))**2
             return -(1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
 
@@ -316,7 +329,7 @@ class Classic:
         def integrand(phi):
             r = a*(1. - e**2)/(1. + e*np.cos(phi))
             v_s = np.sqrt(sp.m_total(a) *(2./r - 1./a))
-            return Classic.mass_gain(sp, r, v_s) / v_s / (1.+e*np.cos(phi))**2
+            return Classic.F_acc(sp, r, v_s) / v_s / (1.+e*np.cos(phi))**2
         return -(1.-e**2)**(3./2.)/2./np.pi *np.sqrt(sp.m_total(a) * a*(1.-e**2)) *  quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
 
@@ -451,7 +464,7 @@ class Classic:
                 tic = time.perf_counter()
 
             if accretion:
-                dm2_dt = t_scale/m_scale * Classic.dm2_dt(sp, R)
+                dm2_dt = t_scale/m_scale * Classic.dm2_dt_avg(sp, R)
             dR_dt = t_scale/R_scale * Classic.da_dt(sp, R, accretion=accretion)
 
             if verbose:
@@ -544,7 +557,7 @@ class Classic:
             if verbose:
                 tic = time.perf_counter()
             if accretion:
-                dm2_dt = t_scale/m_scale * Classic.dm2_dt(sp, a, e)
+                dm2_dt = t_scale/m_scale * Classic.dm2_dt_avg(sp, a, e)
             da_dt = t_scale/a_scale * Classic.da_dt(sp, a, e, accretion=accretion)
             de_dt = t_scale * Classic.de_dt(sp, a, e, da_dt*a_scale/t_scale, accretion=accretion, dm2_dt=(dm2_dt*m_scale/t_scale if accretion else 0.))
 
