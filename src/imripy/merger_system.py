@@ -156,7 +156,22 @@ class SystemProp:
         """
         return np.ones(np.shape(r))*self.m1 + self.halo.mass(r)
         #return np.ones(np.shape(r))*self.m1
-        # If you want to exclude the halo mass from the energy and angular momentum calculations us the latter
+        # If you want to exclude the halo mass from the energy and angular momentum calculations use the latter
+
+    def dmass_dr(self, r):
+        """
+        The function returns the derivative of the total mass enclosed in a sphere of radius r. This derivative stems from the mass of the dark matter halo
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the mass derivative
+
+        Returns:
+            out : float or array_like (depending on r)
+                The enclosed mass derivative
+        """
+        return 4.*np.pi*r**2 * self.halo.density(r)
+
 
     def omega_s(self, r):
         """

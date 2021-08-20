@@ -36,6 +36,22 @@ class Classic:
         """
         return  - sp.m_total(a)*sp.m_reduced(a) / a / 2.
 
+    def dE_orbit_da(sp, a, e=0.):
+        """
+        The function gives the derivative of the orbital energy wrt the semimajor axis a
+           of the binary with central mass m1 with the surrounding halo and the smaller mass m2
+           for a Keplerian orbit with semimajor axis a and eccentricity e
+        Parameters:
+            sp (SystemProp) : The object describing the properties of the inspiralling system
+            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
+            e  (float)      : The eccentricity of the Keplerian orbit
+        Returns:
+            out : float
+                The derivative of the orbital energy wrt to a of the Keplerian orbit
+        """
+        return sp.m2 * sp.mass(a) / 2. / a**2  * ( 1.
+                                                        - a*sp.dmass_dr(a)/sp.mass(a)
+                                                    )
 
     def L_orbit(sp, a, e):
         """
@@ -266,9 +282,13 @@ class Classic:
             out : float
                 The total energy loss
         """
-        return ( Classic.dE_gw_dt(sp, a, e) + Classic.dE_df_dt(sp, a, e)
-                     + (Classic.dE_acc_dt(sp, a, e) if accretion else 0.)
-                   )
+        dE_gw_dt = Classic.dE_gw_dt(sp, a, e)
+        dE_df_dt = Classic.dE_df_dt(sp, a, e)
+        if accretion:
+            dE_acc_dt = Classic.dE_acc_dt(sp, a, e)
+
+        #print("dE_gw_dt=", dE_gw_dt, "dE_df_dt=", dE_df_dt, "dE_acc_dt=", dE_acc_dt if accretion else 0.)
+        return ( dE_gw_dt + dE_df_dt + (dE_acc_dt if accretion else 0.))
 
 
     def dL_gw_dt(sp, a, e):
@@ -352,9 +372,9 @@ class Classic:
         dL_df_dt = Classic.dL_df_dt(sp, a, e)
         if accretion:
             dL_acc_dt = Classic.dL_acc_dt(sp, a, e)
-        return  (dL_gw_dt + dL_df_dt
-                  + (dL_acc_dt if accretion else 0.)
-                 )
+
+        #print("dL_gw_dt=", dL_gw_dt, "dL_df_dt=", dL_df_dt, "dL_acc_dt=", dL_acc_dt if accretion else 0.)
+        return  (dL_gw_dt + dL_df_dt + (dL_acc_dt if accretion else 0.))
 
     def da_dt(sp, a, e=0., accretion=False, dm2_dt = 0.):
         """
@@ -375,9 +395,10 @@ class Classic:
         """
         dE_dt = Classic.dE_dt(sp, a, e, accretion)
         dE_orbit_dm2 = - sp.mass(a)/2./a
+        dE_orbit_da = Classic.dE_orbit_da(sp, a, e)
 
         return  (  ( dE_dt - dE_orbit_dm2 * dm2_dt   )
-                    / Classic.dE_orbit_da(sp, a, e) )
+                    / dE_orbit_da )
 
 
     def de_dt(sp, a, e, da_dt, accretion=False, dm2_dt=0.):
@@ -403,12 +424,20 @@ class Classic:
             return 0.
 
         g = 1. / sp.m_total(a)**2 / sp.m_reduced(a)**3
-        dg_dm2 = -2. / sp.mass(a)**3 / sp.m2**3 * (1. + 3./2. * sp.m2 / sp.mass(a))
-        #dg_da = -2. / sp.mass(a)**3 / sp.m2**3 * (1. + 3./2. * sp.mass(a) / sp.m2) * (4.*np.pi*a**2 * sp.halo.density(a))
-        dg_da = 0.   # TODO: Check this term
+        dg_dm2 = -2. / sp.mass(a)**3 / sp.m2**3 * (1. + 3./2. * sp.mass(a) / sp.m2)
+        #dg_dm2 = 0.
+        dg_da = -2. / sp.mass(a)**3 / sp.m2**3 * (1. + 3./2. * sp.m2 / sp.mass(a)) * sp.dmass_dr(a)
+        #dg_da = 0.   
 
-        return - (1.-e**2)/2./e *(         Classic.dE_dt(sp, a, e, accretion) / Classic.E_orbit(sp, a, e)
-                                    + 2. * Classic.dL_dt(sp, a, e, accretion) / Classic.L_orbit(sp, a, e)
+        dE_dt = Classic.dE_dt(sp, a, e, accretion)
+        E = Classic.E_orbit(sp, a, e)
+        dL_dt = Classic.dL_dt(sp, a, e, accretion)
+        L = Classic.L_orbit(sp, a, e)
+
+        #print("dE_dt/E=", dE_dt/E, "2dL_dt/L=", 2.*dL_dt/L, "diff=", dE_dt/E + 2.*dL_dt/L, "dg_dt/g=", (dg_dm2*dm2_dt + dg_da*da_dt)/g, )
+
+        return - (1.-e**2)/2./e *(  dE_dt/E
+                                    + 2. * dL_dt/L
                                     + (dg_dm2 * dm2_dt + dg_da * da_dt)/g
                                     )
 
