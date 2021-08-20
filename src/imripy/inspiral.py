@@ -413,7 +413,7 @@ class Classic:
                                     )
 
 
-    def evolve_circular_binary(sp, R_0, R_fin=0., t_0=0., t_fin=None, acc=1e-8, verbose = True, accretion=False):
+    def evolve_circular_binary(sp, R_0, R_fin=0., t_0=0., t_fin=None, acc=1e-8, verbose = 1, accretion=False):
         """
         The function evolves the differential equation of the radius of the circular orbit of the inspiralling system
             dR/dt = dE/dt  /  (dE/dR)
@@ -426,7 +426,7 @@ class Classic:
             t_0    (float)  : The initial time
             t_fin  (float)  : The time until the system should be evolved, if None then the estimated coalescence time will be used
             acc    (float)  : An accuracy parameter that is passed to solve_ivp
-            verbose (bool)  : A parameter describing how verbose the function should be
+            verbose (int)   : A parameter describing how verbose the function should be
             accretion(bool) : A parameter wether to include accretion effects of the secondary black hole
 
         Returns:
@@ -450,7 +450,7 @@ class Classic:
 
         #t_step_max = t_fin/1e4 / t_coal
         t_step_max = np.inf
-        if verbose:
+        if verbose > 0:
             print("Evolving from ", R_0/sp.r_isco(), " to ", R_fin/sp.r_isco(),"r_isco, " + ("with" if accretion else "without") + " accretion")
 
         def dy_dt(t, y, *args):
@@ -460,21 +460,23 @@ class Classic:
             if accretion:
                 sp.m2 = y[1]*m_scale
 
-            if verbose:
+            if verbose > 1:
                 tic = time.perf_counter()
 
             if accretion:
-                dm2_dt = t_scale/m_scale * Classic.dm2_dt_avg(sp, R)
-            dR_dt = t_scale/R_scale * Classic.da_dt(sp, R, accretion=accretion)
+                dm2_dt =  Classic.dm2_dt_avg(sp, R)
+            else:
+                dm2_dt = 0.
+            dR_dt =  Classic.da_dt(sp, R, accretion=accretion, dm2_dt=dm2_dt)
 
-            if verbose:
+            if verbose > 1:
                 toc = time.perf_counter()
-                print("t=", t, "R=", R, "dR/dt=", dR_dt, "m2=", sp.m2, "dm2/dt=", dm2_dt if accretion else 0.,
+                print("t=", t, "R=", R, "dR/dt=", dR_dt, "m2=", sp.m2, "dm2/dt=", dm2_dt,
                                     "elapsed real time: ", toc-tic)
 
             if accretion:
-                return [dR_dt, dm2_dt]
-            return dR_dt
+                return [t_scale/R_scale * dR_dt, t_scale/m_scale * dm2_dt]
+            return t_scale/R_scale * dR_dt
 
         fin_reached = lambda t,y, *args: y[0] - R_fin/R_scale          # Give the termination condition that R = R_fin
         fin_reached.terminal = True
@@ -492,7 +494,7 @@ class Classic:
         if accretion:
             m2 = Int.y[1]*m_scale
 
-        if verbose:
+        if verbose > 0:
             print(Int.message)
             print(" -> Evolution took ", "{0:.4e}".format((t[-1] - t[0])/ms.year_to_pc), " yrs")
         if accretion:
@@ -500,7 +502,7 @@ class Classic:
         return t, R
 
 
-    def evolve_elliptic_binary(sp, a_0, e_0, a_fin=0., t_0=0., t_fin=None, acc=1e-8, verbose = True, accretion=False):
+    def evolve_elliptic_binary(sp, a_0, e_0, a_fin=0., t_0=0., t_fin=None, acc=1e-8, verbose = 1, accretion=False):
         """
         The function evolves the coupled differential equations of the semimajor axis and eccentricity of the Keplerian orbits of the inspiralling system
             da/dt = da/dt  /  (dE/da)
@@ -515,7 +517,7 @@ class Classic:
             t_0    (float)  : The initial time
             t_fin  (float)  : The time until the system should be evolved, if None then the estimated coalescence time will be used
             acc    (float)  : An accuracy parameter that is passed to solve_ivp
-            verbose (bool)  : A parameter describing how verbose the function should be
+            verbose (int)   : A parameter describing how verbose the function should be
 
         Returns:
             t : np.ndarray
@@ -543,33 +545,35 @@ class Classic:
 
         #t_step_max = t_fin/1e4 / t_coal
         t_step_max = np.inf
-        if verbose:
+        if verbose > 0:
             print("Evolving from ", a_0/sp.r_isco(), " to ", a_fin/sp.r_isco(),"r_isco with initial eccentricity ", e_0)
 
         def dy_dt(t, y, *args):
             sp = args[0]
-            #t = t*t_scale
+            t = t*t_scale
             a = y[0]*a_scale
             e = y[1]
             if accretion:
                 sp.m2 = y[2] * m_scale
 
-            if verbose:
+            if verbose > 1:
                 tic = time.perf_counter()
             if accretion:
-                dm2_dt = t_scale/m_scale * Classic.dm2_dt_avg(sp, a, e)
-            da_dt = t_scale/a_scale * Classic.da_dt(sp, a, e, accretion=accretion)
-            de_dt = t_scale * Classic.de_dt(sp, a, e, da_dt*a_scale/t_scale, accretion=accretion, dm2_dt=(dm2_dt*m_scale/t_scale if accretion else 0.))
+                dm2_dt = Classic.dm2_dt_avg(sp, a, e)
+            else:
+                dm2_dt = 0.
+            da_dt = Classic.da_dt(sp, a, e, accretion=accretion, dm2_dt=dm2_dt)
+            de_dt = Classic.de_dt(sp, a, e, da_dt, accretion=accretion, dm2_dt=dm2_dt)
 
-            if verbose:
+            if verbose > 1:
                 toc = time.perf_counter()
-                print("t=", t, "a=", a, "da/dt=", da_dt, "e=", e, "de/dt=", de_dt, "m2=", sp.m2, "dm2_dt=", dm2_dt if accretion else 0.,
+                print("t=", t, "a=", a, "da/dt=", da_dt, "e=", e, "de/dt=", de_dt, "m2=", sp.m2, "dm2_dt=", dm2_dt,
                         " elapsed real time: ", toc-tic)
 
 
             if accretion:
-                return [da_dt, de_dt, dm2_dt]
-            return [da_dt, de_dt]
+                return [t_scale/a_scale * da_dt, t_scale* de_dt, t_scale/m_scale * dm2_dt]
+            return [t_scale/a_scale * da_dt, t_scale * de_dt]
 
         fin_reached = lambda t,y, *args: y[0] - a_fin/a_scale           # Give the termination condition such that a = a_fin
         fin_reached.terminal = True
@@ -589,7 +593,7 @@ class Classic:
         if accretion:
             m2 = Int.y[2]*m_scale
 
-        if verbose:
+        if verbose > 0:
             print(Int.message)
             print(" -> Evolution took ", "{0:.4e}".format((t[-1] - t[0])/ms.year_to_pc), " yrs")
         if accretion:
