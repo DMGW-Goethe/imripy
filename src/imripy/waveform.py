@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.interpolate import UnivariateSpline, interp1d
-from scipy.integrate import quad
+from scipy.integrate import quad, solve_ivp
 import imripy.merger_system as ms
 from scipy.special import jv
 
@@ -82,7 +82,6 @@ def h_n(n, sp, t, a, e, dbg=False, acc=1e-13):
         acc    (float)  : An accuracy parameter that is passed to the integration function
 
     Returns:
-    return f_gw, h_n_plus, h_n_cross, Psi_n
         f_gw : np.ndarray
             The frequencies of the gravitational wave emission at the corresponding time steps
         h_n_plus : np.ndarray
@@ -98,7 +97,7 @@ def h_n(n, sp, t, a, e, dbg=False, acc=1e-13):
         A_n   : np.ndarray
             The amplitude of the waveform over time
     TODO:
-        Check redshift inclusion
+        Check redshift, luminosity distance inclusion
     """
 
     def C_n_plus(n, sp, e):
@@ -138,7 +137,7 @@ def h_n(n, sp, t, a, e, dbg=False, acc=1e-13):
     Psi_n = PhiTild_n - np.pi/4.   # TODO: Check inclusion of D term
 
     # Amplitude of the signal
-    A_n = - sp.redshifted_m_chirp()**(5./3.) / sp.D / 2. * (2.*np.pi * F/(1.+sp.z()))**(2./3.) / np.sqrt(n*F_dot/(1.+sp.z())**2)
+    A_n = - sp.redshifted_m_chirp()**(5./3.) / sp.D / 2. * (2.*np.pi * F/(1.+sp.z()))**(2./3.) / np.sqrt(n*F_dot/(1.+sp.z())**2) # TODO: Check redshift factors
     A_n = np.where(F_dot == 0., 0., A_n)
 
     # the actual waveform
@@ -153,4 +152,43 @@ def h_n(n, sp, t, a, e, dbg=False, acc=1e-13):
 
     return f_gw, h_n_plus, h_n_cross, Psi_n
 
+
+
+def h(sp, t, a, e, t_grid, phi_0=0., acc=1e-13):
+    """
+    This function calculates the gravitational waveform h_+,x(t) for eccentric inspirals according to eq (96) in https://arxiv.org/pdf/2107.00741.pdf
+    Parameters:
+        sp (SystemProp) : The object describing the properties of the inspiralling system
+        t  (array_like) : The time steps of the system evolution
+        a  (array_like) : The corresponding semi-major axes at the time steps
+        e  (array_like) : The corresponding eccentricities at the time steps
+        t_grid (array_like) : The times at which to evaluate h
+        phi_0 (float)   : The initial phase of the orbit at t_grid[0]
+        acc    (float)  : An accuracy parameter that is passed to the integration function
+
+    Returns:
+        h_plus : np.ndarray
+            The amplitude of the plus polarization waveform at the corresponding time steps of t_grid
+        h_cross : np.ndarray
+            The amplitude of the cross polarization waveform at the corresponding time steps of t_grid
+    """
+    a_int = interp1d(t, a, kind='cubic', bounds_error=True)
+    e_int = interp1d(t, e, kind='cubic', bounds_error=True)
+
+    def phi_dot(t, phi):  # The orbital phase evolution according to Maggiore (2007)
+        return np.sqrt(sp.m_total()/a_int(t)**3) * (1. - e_int(t)**2)**(-3./2.) * (1. + e_int(t)*np.cos(phi))**2
+
+    sol = solve_ivp(phi_dot, [t_grid[0], t_grid[-1]], [phi_0], t_eval=t_grid, rtol=acc, atol=acc)  # calculate the orbital phase at the given time steps t_grid
+    phi = sol.y[0]
+
+    h_plus = - ( (2. * np.cos(2.*phi - 2.*sp.pericenter_angle) + 5.*e_int(t_grid)/2. * np.cos(phi - 2.*sp.pericenter_angle)
+                    + e_int(t_grid)/2. * np.cos(3.*phi - 2.*sp.pericenter_angle) + e_int(t_grid)**2 * np.cos(2.*sp.pericenter_angle) ) * (1. + np.cos(sp.inclination_angle)**2 )
+            + (e_int(t_grid) * np.cos(phi) + e_int(t_grid)**2 ) * np.sin(sp.inclination_angle)**2 )
+    h_plus *= sp.m_reduced() / (a_int(t_grid)*(1. - e_int(t_grid)**2)) / sp.D
+
+    h_cross = - (4. * np.sin(2.*phi - 2.*sp.pericenter_angle) + 5.*e_int(t_grid) * np.sin(phi - 2.*sp.pericenter_angle)
+                        + e_int(t_grid) * np.sin(3.*phi - 2.*sp.pericenter_angle) - 2.*e_int(t_grid)**2 * np.sin(2.*sp.pericenter_angle)) * np.cos(sp.inclination_angle)
+    h_cross *= sp.m_reduced() / (a_int(t_grid)*(1. - e_int(t_grid)**2)) / sp.D
+
+    return h_plus, h_cross
 
