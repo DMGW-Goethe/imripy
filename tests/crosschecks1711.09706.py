@@ -190,21 +190,20 @@ print("mass increase:", m2[-1]/m2[0] -1.)
 
 # Now check the eccentric implementation with a tiny eccentricity, it should be very similar
 a0 = 100.*sp_1.r_isco()
-e0 = 0.001
+e0 = 1e-5
 sp_1.m2 = 1.*ms.solar_mass_to_pc
 
-t2, a2, e2, m22 = inspiral.Classic.evolve_elliptic_binary(sp_1, a0, e0, sp_1.r_isco(), acc=1e-11, accretion=True)
+t2, a2, e2, m22 = inspiral.Classic.evolve_elliptic_binary(sp_1, a0, e0, sp_1.r_isco(), acc=1e-12, accretion=True)
 
 plt.figure()
-plt.loglog(t, R, label='R, cirlular')
+plt.loglog(t, R, label='R, circular')
 plt.loglog(t2, a2, label='a, elliptic')
 
-plt.loglog(t, m2, label='$m_2$, cirlular')
+plt.loglog(t, m2, label='$m_2$, circular')
 plt.loglog(t2, m22, label='$m_2$, elliptic')
 
 plt.loglog(t2, e2, label='e')
 plt.grid(); plt.legend()
-
 
 plt.show()
 
