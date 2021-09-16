@@ -298,6 +298,36 @@ class Spike(MatterHalo):
         """
         return Spike(snfw.rho_spike, snfw.r_spike, snfw.alpha)
 
+
+    def FromRho6(rho_6, M_bh, alpha, r_6=1e-6):
+        """
+        This function allows to create a new Spike object from the parametrization given in
+            https://arxiv.org/pdf/2108.04154.pdf
+        where
+            rho (r) = rho_6 * (r_6/r)**(alpha)
+        and
+            r_spike = (  (3-alpha) * 0.2**(3-alpha) * M_bh / 2 / pi / rho_spike )**(1/3)
+
+        Parameters:
+            rho_6 : float
+                The density at the reference point r_6
+            M_bh  : float
+                The mass of the central black hole
+            alpha : float
+                The power-law index of the spike profile, with condition 0 < alpha < 3
+            r_6   : float
+                The reference point, which is 1e-6 pc by default
+
+        Returns:
+            out : Spike object
+                A spike object with the corresponding spike parameters
+        """
+        k = (3. - alpha) * 0.2**(3. - alpha)/2./np.pi
+        rho_spike = ( rho_6 * (k*M_bh)**(-alpha/3.) * r_6**alpha )**(3./(3.-alpha))
+        r_spike = (k*M_bh/rho_spike)**(1./3.)
+        return Spike(rho_spike, r_spike, alpha)
+
+
     def __str__(self):
         """
         Gives the string representation of the object
