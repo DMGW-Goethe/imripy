@@ -17,6 +17,7 @@ iota = 0.
 sp_0 = ms.SystemProp(m1, m2, halo.ConstHalo(0.), D, inclination_angle=iota, pericenter_angle=beta)
 
 inspiral.Classic.ln_Lambda=10.
+inspiral.Classic.dmPhaseSpaceFraction=1.
 rho_spike = 226 * ms.solar_mass_to_pc
 r_spike = 0.54
 e0 = 0.6

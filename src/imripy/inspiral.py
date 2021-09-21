@@ -16,8 +16,10 @@ class Classic:
 
     Attributes:
         ln_Lambda (float): The Coulomb logarithm of the dynamical friction description. Set -1 for ln sqrt(m1/m2). Default is 3.
+        dmPhaseSpaceFraction (float) : As the dm particles in the halo are not stationary, the relative velocity effects need to be modeled, here according to https://arxiv.org/pdf/2002.12811.pdf
     """
     ln_Lambda = 3.
+    dmPhaseSpaceFraction = 0.58
 
 
     def E_orbit(sp, a, e=0.):
@@ -126,7 +128,7 @@ class Classic:
         ln_Lambda = Classic.ln_Lambda
         if ln_Lambda < 0.:
             ln_Lambda = np.log(sp.m1/sp.m2)/2.
-        return 4.*np.pi * sp.m2**2 * sp.halo.density(r) * ln_Lambda / v**2
+        return 4.*np.pi * sp.m2**2 * sp.halo.density(r) * Classic.dmPhaseSpaceFraction * ln_Lambda / v**2
 
 
     def dE_df_dt(sp, a, e=0.):
@@ -427,7 +429,7 @@ class Classic:
         dg_dm2 = -2. / sp.mass(a)**3 / sp.m2**3 * (1. + 3./2. * sp.mass(a) / sp.m2)
         #dg_dm2 = 0.
         dg_da = -2. / sp.mass(a)**3 / sp.m2**3 * (1. + 3./2. * sp.m2 / sp.mass(a)) * sp.dmass_dr(a)
-        #dg_da = 0.   
+        #dg_da = 0.
 
         dE_dt = Classic.dE_dt(sp, a, e, accretion)
         E = Classic.E_orbit(sp, a, e)

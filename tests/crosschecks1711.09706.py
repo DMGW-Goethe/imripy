@@ -10,6 +10,7 @@ from imripy import waveform
 
 
 inspiral.Classic.ln_Lambda=3.
+inspiral.Classic.dmPhaseSpaceFraction=1.
 
 def Meff(sp, r):
     return np.where(r > sp.r_isco(), sp.m1 - 4.*np.pi*sp.halo.rho_spike*sp.halo.r_spike**3 *sp.r_isco()**(3.-sp.halo.alpha) /(3.-sp.halo.alpha), sp.m1)
