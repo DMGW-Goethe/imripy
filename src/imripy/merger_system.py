@@ -154,8 +154,8 @@ class SystemProp:
             out : float or array_like (depending on r)
                 The enclosed mass
         """
-        return np.ones(np.shape(r))*self.m1 + self.halo.mass(r)
-        #return np.ones(np.shape(r))*self.m1
+        #return np.ones(np.shape(r))*self.m1 + self.halo.mass(r)
+        return np.ones(np.shape(r))*self.m1
         # If you want to exclude the halo mass from the energy and angular momentum calculations use the latter
 
     def dmass_dr(self, r):
@@ -170,7 +170,8 @@ class SystemProp:
             out : float or array_like (depending on r)
                 The enclosed mass derivative
         """
-        return 4.*np.pi*r**2 * self.halo.density(r)
+        #return 4.*np.pi*r**2 * self.halo.density(r)
+        return 0.
 
 
     def omega_s(self, r):
