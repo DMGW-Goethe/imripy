@@ -137,9 +137,9 @@ def plotPhase(sp, t, R, omega_s):
     plt.yscale('symlog')
 
 
-def plotWaveform(sp, t, R, omega_s):
+def plotWaveform(sp, ev):
     #f = np.geomspace(omega_s[1], omega_s[-2], num=500)/np.pi
-    f_gw, h, _, Psi  = waveform.h_2( sp, t, omega_s, R)
+    f_gw, h, _, Psi  = waveform.h_2( sp, ev)
     plt.loglog(f_gw*ms.year_to_pc*3.17e-8, h, label=r'$\tilde{h}^{code}$')
 
     alpha = sp.halo.alpha
@@ -170,23 +170,24 @@ plotPhiprimeprime(sp_1, sp_1.r_isco(), 1e5*sp_1.r_isco())
 plt.legend(); plt.grid()
 
 R0 = 100.*sp_1.r_isco()
-t, R, m2 = inspiral.Classic.evolve_circular_binary(sp_1, R0, sp_1.r_isco(), acc=1e-11, accretion=True)
+#t, R, m2 = inspiral.Classic.evolve_circular_binary(sp_1, R0, sp_1.r_isco(), acc=1e-11, accretion=True)
+ev = inspiral.Classic.evolve_circular_binary(sp_1, R0, sp_1.r_isco(), acc=1e-11, accretion=True)
 
-sp_1.m2=m2
-omega_s = sp_1.omega_s(R)
+sp_1.m2=ev.m2
+omega_s = sp_1.omega_s(ev.R)
 
 plt.figure()
-plotPhase(sp_1, t, R, omega_s)
+plotPhase(sp_1, ev.t, ev.R, omega_s)
 plt.legend(); plt.grid()
 
 plt.figure()
-plotWaveform(sp_1, t, R, omega_s)
+plotWaveform(sp_1, ev)
 plt.legend(); plt.grid()
 
 plt.figure()
-plt.loglog(t, m2/ms.solar_mass_to_pc, label="$m_2$")
+plt.loglog(ev.t, ev.m2/ms.solar_mass_to_pc, label="$m_2$")
 plt.legend(); plt.grid()
-print("mass increase:", m2[-1]/m2[0] -1.)
+print("mass increase:", ev.m2[-1]/ev.m2[0] -1.)
 
 
 # Now check the eccentric implementation with a tiny eccentricity, it should be very similar
@@ -194,16 +195,17 @@ a0 = 100.*sp_1.r_isco()
 e0 = 1e-5
 sp_1.m2 = 1.*ms.solar_mass_to_pc
 
-t2, a2, e2, m22 = inspiral.Classic.evolve_elliptic_binary(sp_1, a0, e0, sp_1.r_isco(), acc=1e-12, accretion=True)
+#t2, a2, e2, m22 = inspiral.Classic.evolve_elliptic_binary(sp_1, a0, e0, sp_1.r_isco(), acc=1e-12, accretion=True)
+ev2 = inspiral.Classic.evolve_elliptic_binary(sp_1, a0, e0, sp_1.r_isco(), acc=1e-12, accretion=True)
 
 plt.figure()
-plt.loglog(t, R, label='R, circular')
-plt.loglog(t2, a2, label='a, elliptic')
+plt.loglog(ev.t, ev.R, label='R, circular')
+plt.loglog(ev2.t, ev2.a, label='a, elliptic')
 
-plt.loglog(t, m2, label='$m_2$, circular')
-plt.loglog(t2, m22, label='$m_2$, elliptic')
+plt.loglog(ev.t, ev.m2, label='$m_2$, circular')
+plt.loglog(ev2.t, ev2.m2, label='$m_2$, elliptic')
 
-plt.loglog(t2, e2, label='e')
+plt.loglog(ev2.t, ev2.e, label='e')
 plt.grid(); plt.legend()
 
 plt.show()

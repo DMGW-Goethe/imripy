@@ -20,35 +20,32 @@ R0= 100.*sp.r_isco()
 R_fin = sp.r_isco()
 #R_fin =  [15.*sp.r_isco, sp.r_isco]
 
-t, R = inspiral.Classic.evolve_circular_binary(sp, R0, R_fin, acc=1e-8)
-omega_s = sp.omega_s(R)
-#f_gw = np.geomspace(omega_s[0]/np.pi, omega_s[-1]/np.pi, num=200)
+#t, R = inspiral.Classic.evolve_circular_binary(sp, R0, R_fin, acc=1e-8)
+ev = inspiral.Classic.evolve_circular_binary(sp, R0, R_fin, acc=1e-8)
+omega_s = sp.omega_s(ev.R)
 f_gw = omega_s/np.pi
 omega_s_obs = omega_s/(1. + sp.z())
 f_gw_obs = omega_s/np.pi
 f_isco = f_gw[-1]
-t_of_f = interp1d(omega_s/np.pi, t, kind='cubic', bounds_error=False, fill_value='extrapolate')
-t_obs_of_f = interp1d(omega_s_obs/np.pi, t, kind='cubic', bounds_error=False, fill_value='extrapolate')
-omega_gw = interp1d(t, 2*omega_s, kind='cubic', bounds_error=False, fill_value='extrapolate')
-omega_gw_obs = interp1d(t, 2*omega_s_obs, kind='cubic', bounds_error=False, fill_value='extrapolate')
+t_of_f = interp1d(omega_s/np.pi, ev.t, kind='cubic', bounds_error=False, fill_value='extrapolate')
+t_obs_of_f = interp1d(omega_s_obs/np.pi, ev.t, kind='cubic', bounds_error=False, fill_value='extrapolate')
+omega_gw = interp1d(ev.t, 2*omega_s, kind='cubic', bounds_error=False, fill_value='extrapolate')
+omega_gw_obs = interp1d(ev.t, 2*omega_s_obs, kind='cubic', bounds_error=False, fill_value='extrapolate')
 
-t_c = t[-1] - t[0] + 5./256. * R[-1]**4/sp.m_total()**2 / sp.m_reduced()
+t_c = ev.t[-1] - ev.t[0] + 5./256. * ev.R[-1]**4/sp.m_total()**2 / sp.m_reduced()
 t_c_obs = t_c*(1.+sp.z())
 t_c0 = 5./256. *R0**4 / sp.m_total()**2 / sp.m_reduced()
 omega_isco = np.sqrt((sp.m1+sp.m2)/sp.r_isco()**3)
 print(t_c0, t_c, t_c/t_c0 - 1.)
 print(omega_isco, omega_s[-1], omega_s[-1]/omega_isco - 1.)
-print(sp.r_isco(), R[-1], R[-1]/sp.r_isco() - 1.)
+print(sp.r_isco(), ev.R[-1], ev.R[-1]/sp.r_isco() - 1.)
 
-#plt.axvline(omega_gw(t_c0)/2./np.pi*year_in_pc*3.17e-8, label='$f_{isco}^{analytic}$')
 plt.axvline(f_isco*year_in_pc*3.17e-8, label='$f^{obs}_{isco}$')
 
 plt.plot(f_gw*year_in_pc*3.17e-8, t_obs_of_f(f_gw), label='$t_{obs}(f)$')
-plt.plot(f_gw*year_in_pc*3.17e-8, (1.+sp.z())*(t[-1] - 5. * (8*np.pi*f_gw)**(-8./3.) * sp.m_chirp()**(-5./3.)), label='$t_{obs}(f)^{analytic}$')
+plt.plot(f_gw*year_in_pc*3.17e-8, (1.+sp.z())*(ev.t[-1] - 5. * (8*np.pi*f_gw)**(-8./3.) * sp.m_chirp()**(-5./3.)), label='$t_{obs}(f)^{analytic}$')
 
-#Phit = np.array([quad(lambda u: np.exp(u)*omega_gw(np.exp(u)), np.log(t[0]), np.log(y0))[0] for y0 in t ])
-Phit = np.cumsum([quad(lambda t: omega_gw(t), t[i-1], t[i], limit=500, epsrel=1e-13, epsabs=1e-13)[0] if not i == 0 else 0. for i in range(len(t)) ])
-#Phi = interp1d(t, Phit - Phit[-1], kind='cubic', bounds_error=False, fill_value='extrapolate')(t_of_f(f_gw))
+Phit = np.cumsum([quad(lambda t: omega_gw(t), ev.t[i-1], ev.t[i], limit=500, epsrel=1e-13, epsabs=1e-13)[0] if not i == 0 else 0. for i in range(len(ev.t)) ])
 Phi = Phit - Phit[-1]
 Phi0 = - 2.*(8.*np.pi*sp.m_chirp()*f_gw)**(-5./3.) + 2.*(8.*np.pi*sp.m_chirp()*f_isco)**(-5./3.)
 
@@ -57,7 +54,7 @@ plt.plot(f_gw*year_in_pc*3.17e-8, Phi0, label=r'$\Phi^{analytic}$')
 plt.plot(f_gw*year_in_pc*3.17e-8, Phi - Phi0, label=r'$\Delta\Phi$')
 
 #tpt = omega_gw(t_of_f(f_gw)) * (t_of_f(f_gw) -  t_of_f(f_isco))
-tpt = 2.*np.pi*f_gw * (t - t_c)
+tpt = 2.*np.pi*f_gw * (ev.t - t_c)
 tpt0 = -5./4. * (8.*np.pi*sp.m_chirp()*f_gw)**(-5./3.)
 
 plt.plot(f_gw*year_in_pc*3.17e-8, tpt, label=r'$2\pi ft^{code}$')
@@ -83,25 +80,25 @@ plt.figure()
 
 plt.axvline(t_c0/year_in_pc, label='$t_c^{analytic}$')
 
-Ra = (256./5. * sp.m_reduced() * sp.m_total()**2 * (t_c - t))**(1./4.)
-plt.plot(t/year_in_pc, R, label='$R^{code}$')
-plt.plot(t/year_in_pc, Ra, label='$R^{analytic}$')
-plt.plot(t/year_in_pc, np.abs(Ra - R), label='$\Delta R$')
+Ra = (256./5. * sp.m_reduced() * sp.m_total()**2 * (t_c - ev.t))**(1./4.)
+plt.plot(ev.t/year_in_pc, ev.R, label='$R^{code}$')
+plt.plot(ev.t/year_in_pc, Ra, label='$R^{analytic}$')
+plt.plot(ev.t/year_in_pc, np.abs(Ra - ev.R), label='$\Delta R$')
 
 Phi = Phit
-Phi0 = -2.* (1./5.*(t_c - t)/ sp.m_chirp())**(5./8.)
-plt.plot(t/year_in_pc, Phi, label='$\Phi^{code}$')
-plt.plot(t/year_in_pc, Phi0  - Phi0[0] + Phi[0], label='$\Phi^{analytic}$')
-plt.plot(t/year_in_pc, np.abs(Phi0 - Phi0[0] - Phi + Phi[0]), label='$\Delta\Phi$')
+Phi0 = -2.* (1./5.*(t_c - ev.t)/ sp.m_chirp())**(5./8.)
+plt.plot(ev.t/year_in_pc, Phi, label='$\Phi^{code}$')
+plt.plot(ev.t/year_in_pc, Phi0  - Phi0[0] + Phi[0], label='$\Phi^{analytic}$')
+plt.plot(ev.t/year_in_pc, np.abs(Phi0 - Phi0[0] - Phi + Phi[0]), label='$\Delta\Phi$')
 
-f_gw0 = 1./8./np.pi * 5**(3./8.) * sp.m_chirp()**(-5./8.) * (t_c-t)**(-3./8.) / (1.+sp.z())
-plt.plot(t/year_in_pc, omega_s/np.pi, label='$f_{gw}$')
-plt.plot(t/year_in_pc, f_gw0, label='$f_{gw}^{analytic}$')
-plt.plot(t/year_in_pc, np.abs(omega_s/np.pi - f_gw0), label='$\Delta f_{gw}$' )
-#plt.plot(t/year_in_pc, Phi, label='$\Phi(t)$')
-#plt.plot(t/year_in_pc, omega_gw(t)*year_in_pc, label='$\omega_{gw}$')
-#plt.plot(t/year_in_pc, omega_gw.derivative()(t) * year_in_pc, label='$\dot{\omega}_{gw}$')
-#plt.plot(t/year_in_pc, A(t), label='A')
+f_gw0 = 1./8./np.pi * 5**(3./8.) * sp.m_chirp()**(-5./8.) * (t_c-ev.t)**(-3./8.) / (1.+sp.z())
+plt.plot(ev.t/year_in_pc, omega_s/np.pi, label='$f_{gw}$')
+plt.plot(ev.t/year_in_pc, f_gw0, label='$f_{gw}^{analytic}$')
+plt.plot(ev.t/year_in_pc, np.abs(omega_s/np.pi - f_gw0), label='$\Delta f_{gw}$' )
+#plt.plot(ev.t/year_in_pc, Phi, label='$\Phi(ev.t)$')
+#plt.plot(ev.t/year_in_pc, omega_gw(ev.t)*year_in_pc, label='$\omega_{gw}$')
+#plt.plot(ev.t/year_in_pc, omega_gw.derivative()(ev.t) * year_in_pc, label='$\dot{\omega}_{gw}$')
+#plt.plot(ev.t/year_in_pc, A(ev.t), label='A')
 plt.xlabel('t / year');
 #plt.xscale('log')
 plt.yscale('log')
@@ -110,7 +107,7 @@ plt.legend(); plt.grid()
 
 plt.figure()
 f_gw0 = omega_s/np.pi
-f_gw, h, _, Psi, __, PsiTild, __ = waveform.h_2(sp, t, omega_s, R, dbg=True)
+f_gw, h, _, Psi, __, PsiTild, __ = waveform.h_2(sp, ev, dbg=True)
 
 Psi0 = 2.*np.pi*f_gw0 * (t_c0 + sp.D) - np.pi/4. + 3./4. * (8.*np.pi*sp.m_chirp()*f_gw0)**(-5./3.)
 plt.plot(f_gw*year_in_pc*3.17e-8, Psi, label=r'$\Psi^{code}$')

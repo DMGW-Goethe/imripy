@@ -137,8 +137,8 @@ def plotPhase(sp, t, R, omega_s):
     plt.yscale('symlog')
 
 
-def plotWaveform(sp, t, R, omega_s):
-    f_gw, h, _, Psi  = waveform.h_2( sp, t, omega_s, R)
+def plotWaveform(sp, ev):
+    f_gw, h, _, Psi  = waveform.h_2( sp, ev)
     plt.loglog(f_gw*ms.year_to_pc*3.17e-8, h, label=r'$\tilde{h}^{code}$')
 
     alpha = sp.halo.alpha
@@ -175,15 +175,16 @@ plotPhiprimeprime(sp_1, sp_1.r_isco(), 1e5*sp_1.r_isco())
 plt.legend(); plt.grid()
 
 R0 = 80.*sp_1.r_isco()
-t, R = inspiral.Classic.evolve_circular_binary(sp_1, R0, sp_1.r_isco(), acc=1e-12, verbose=False)
-omega_s = sp_1.omega_s(R)
+#t, R = inspiral.Classic.evolve_circular_binary(sp_1, R0, sp_1.r_isco(), acc=1e-12, verbose=False)
+ev = inspiral.Classic.evolve_circular_binary(sp_1, R0, sp_1.r_isco(), acc=1e-12, verbose=False)
+omega_s = sp_1.omega_s(ev.R)
 
 plt.figure()
-plotPhase(sp_1, t, R, omega_s)
+plotPhase(sp_1, ev.t, ev.R, omega_s)
 plt.legend(); plt.grid()
 
 plt.figure()
-plotWaveform(sp_1, t, R, omega_s)
+plotWaveform(sp_1, ev)
 plt.legend(); plt.grid()
 
 

@@ -5,15 +5,13 @@ import imripy.merger_system as ms
 from scipy.special import jv
 
 
-def h_2(sp, t, omega_s, R, dbg=False, acc=1e-13):
+def h_2(sp, ev, dbg=False, acc=1e-13):
     """
     This function calculates the gravitational waveform h_+,x according to eq (25) in https://arxiv.org/pdf/1408.3534.pdf
 
     Parameters:
-        sp (SystemProp) : The object describing the properties of the inspiralling system
-        t  (array_like) : The time steps of the system evolution
-        omega_s (array_like) : The corresponding orbital frequencies at the time steps
-        R  (array_like) : The corresponding radii at the time steps
+        sp (merger_system.SystemProp)   : The object describing the properties of the inspiralling system
+        ev (inspiral.Classic.Evolution) : The evolution object that results from the inspiral modeling
         dbg (bool)      : A parameter returning intermediate variables
         acc    (float)  : An accuracy parameter that is passed to the integration function
 
@@ -37,25 +35,26 @@ def h_2(sp, t, omega_s, R, dbg=False, acc=1e-13):
             The amplitude of the waveform over time
     """
     # First, obtain mapping of gw frequency and time
+    omega_s = sp.omega_s(ev.R)
     f_gw = omega_s / np.pi
-    t_of_f = interp1d(f_gw, t, kind='cubic', bounds_error=False, fill_value='extrapolate')
+    t_of_f = interp1d(f_gw, ev.t, kind='cubic', bounds_error=False, fill_value='extrapolate')
 
     # Next, get the accumulated phase Phi
     omega_gw = 2.*omega_s
-    omega_gw_interp = interp1d(t, omega_gw, kind='cubic', bounds_error=True)
-    Phi = np.cumsum([quad(lambda t: omega_gw_interp(t), t[i-1], t[i], limit=200, epsrel=acc, epsabs=acc)[0] if not i == 0 else 0. for i in range(len(t)) ])
+    omega_gw_interp = interp1d(ev.t, omega_gw, kind='cubic', bounds_error=True)
+    Phi = np.cumsum([quad(lambda t: omega_gw_interp(t), ev.t[i-1], ev.t[i], limit=200, epsrel=acc, epsabs=acc)[0] if not i == 0 else 0. for i in range(len(ev.t)) ])
 
     # and the derivative of omega_gw
-    domega_gw = np.gradient(omega_gw, t)
+    domega_gw = np.gradient(omega_gw, ev.t)
 
     # Calculate PhiTilde
     Phi = Phi - Phi[-1]
-    t_c= (t[-1] + 5./256. * R[-1]**4/sp.m_total()**2 / sp.m_reduced())
-    tpt = 2.*np.pi*f_gw* (t- t_c)
+    t_c= (ev.t[-1] + 5./256. * ev.R[-1]**4/sp.m_total()**2 / sp.m_reduced())
+    tpt = 2.*np.pi*f_gw* (ev.t- t_c)
     PhiTild = tpt - Phi
 
     # Now compute the time-dependant amplitude A
-    A = 1./sp.D * 4. *sp.redshifted_m_reduced() * omega_s**2 * R**2
+    A = 1./sp.D * 4. *sp.redshifted_m_reduced() * omega_s**2 * ev.R**2
 
     # The phase of the GW signal is given by the steady state aproximation
     Psi = 2.*np.pi*f_gw*sp.D + PhiTild - np.pi/4.
@@ -70,14 +69,12 @@ def h_2(sp, t, omega_s, R, dbg=False, acc=1e-13):
     return f_gw/(1.+sp.z()), h_plus, h_cross, Psi
 
 
-def h_n(n, sp, t, a, e, dbg=False, acc=1e-13):
+def h_n(n, sp, ev, dbg=False, acc=1e-13):
     """
     This function calculates the gravitational waveform h^n_+ for eccentric inspirals according to eq (101) in https://arxiv.org/pdf/2107.00741.pdf
     Parameters:
-        sp (SystemProp) : The object describing the properties of the inspiralling system
-        t  (array_like) : The time steps of the system evolution
-        a  (array_like) : The corresponding semi-major axes at the time steps
-        e  (array_like) : The corresponding eccentricities at the time steps
+        sp (merger_system.SystemProp)   : The object describing the properties of the inspiralling system
+        ev (inspiral.Classic.Evolution) : The evolution object that results from the inspiral modeling
         dbg (bool)      : A parameter returning intermediate variables
         acc    (float)  : An accuracy parameter that is passed to the integration function
 
@@ -118,22 +115,22 @@ def h_n(n, sp, t, a, e, dbg=False, acc=1e-13):
                             * ( -2.*(1.-e**2)*n*jv(n, n*e) +  e*(jv(n-1, n*e) - jv(n+1, n*e)) ) )
 
     # Calculate the Keplerian orbital frequency and its derivative over time
-    F = np.sqrt(sp.m_total(a)/a**3) / 2./np.pi
-    F_dot = np.gradient(F, t)
+    F = np.sqrt(sp.m_total(ev.a)/ev.a**3) / 2./np.pi
+    F_dot = np.gradient(F, ev.t)
 
     # Calculate the mean anomaly of the orbit
-    F_interp = interp1d(t, F, kind='cubic', bounds_error=True)
-    mean_anomaly = 2.*np.pi*  np.cumsum([quad(F_interp, t[i-1], t[i], epsabs=acc, epsrel=acc, limit=200)[0] if i > 0 else 0. for i in range(len(t))])
+    F_interp = interp1d(ev.t, F, kind='cubic', bounds_error=True)
+    mean_anomaly = 2.*np.pi*  np.cumsum([quad(F_interp, ev.t[i-1], ev.t[i], epsabs=acc, epsrel=acc, limit=200)[0] if i > 0 else 0. for i in range(len(ev.t))])
 
     # calculate coalescense time left at the end of the a,e data
-    t_coal =  5./256. * a[-1]**4/sp.m_total()**2 /sp.m_reduced()    # The circular case
+    t_coal =  5./256. * ev.a[-1]**4/sp.m_total()**2 /sp.m_reduced()    # The circular case
     def g(e):
         return e**(12./19.)/(1. - e**2) * (1. + 121./304. * e**2)**(870./2299.)
-    t_coal = t_coal * 48./19. / g(e[-1])**4 * quad(lambda e: g(e)**4 *(1-e**2)**(5./2.) /e/(1. + 121./304. * e**2), 0., e[-1], limit=100)[0]   # The eccentric inspiral time according to Maggiore (2007)
-    t_coal = t[-1] + t_coal
+    t_coal = t_coal * 48./19. / g(ev.e[-1])**4 * quad(lambda e: g(e)**4 *(1-e**2)**(5./2.) /e/(1. + 121./304. * e**2), 0., ev.e[-1], limit=100)[0]   # The eccentric inspiral time according to Maggiore (2007)
+    t_coal = ev.t[-1] + t_coal
 
     # Now we can calculate the phase of the stationary phase approximation
-    PhiTild_n =  2.*np.pi * n * F * (t - t_coal) - n * (mean_anomaly - mean_anomaly[-1])
+    PhiTild_n =  2.*np.pi * n * F * (ev.t - t_coal) - n * (mean_anomaly - mean_anomaly[-1])
     Psi_n = PhiTild_n - np.pi/4.   # TODO: Check inclusion of D term
 
     # Amplitude of the signal
@@ -141,8 +138,8 @@ def h_n(n, sp, t, a, e, dbg=False, acc=1e-13):
     A_n = np.where(F_dot == 0., 0., A_n)
 
     # the actual waveform
-    h_n_plus  = A_n * ( C_n_plus(n, sp, e)   +  1.j  * S_n_plus(n, sp, e))
-    h_n_cross = A_n * ( C_n_cross(n, sp, e)  +  1.j  * S_n_cross(n, sp, e))
+    h_n_plus  = A_n * ( C_n_plus(n, sp, ev.e)   +  1.j  * S_n_plus(n, sp, ev.e))
+    h_n_cross = A_n * ( C_n_cross(n, sp, ev.e)  +  1.j  * S_n_cross(n, sp, ev.e))
 
     # the corresponding observed frequencies
     f_gw = n*F / (1.+sp.z())
@@ -154,14 +151,12 @@ def h_n(n, sp, t, a, e, dbg=False, acc=1e-13):
 
 
 
-def h(sp, t, a, e, t_grid, phi_0=0., acc=1e-13):
+def h(sp, ev, t_grid, phi_0=0., acc=1e-13):
     """
-    This function calculates the gravitational waveform h_+,x(t) for eccentric inspirals according to eq (96) in https://arxiv.org/pdf/2107.00741.pdf
+    This function calculates the time domain gravitational waveform h_+,x(t) for eccentric inspirals according to eq (96) in https://arxiv.org/pdf/2107.00741.pdf
     Parameters:
-        sp (SystemProp) : The object describing the properties of the inspiralling system
-        t  (array_like) : The time steps of the system evolution
-        a  (array_like) : The corresponding semi-major axes at the time steps
-        e  (array_like) : The corresponding eccentricities at the time steps
+        sp (merger_system.SystemProp)   : The object describing the properties of the inspiralling system
+        ev (inspiral.Classic.Evolution) : The evolution object that results from the inspiral modeling
         t_grid (array_like) : The times at which to evaluate h
         phi_0 (float)   : The initial phase of the orbit at t_grid[0]
         acc    (float)  : An accuracy parameter that is passed to the integration function
@@ -172,8 +167,8 @@ def h(sp, t, a, e, t_grid, phi_0=0., acc=1e-13):
         h_cross : np.ndarray
             The amplitude of the cross polarization waveform at the corresponding time steps of t_grid
     """
-    a_int = interp1d(t, a, kind='cubic', bounds_error=True)
-    e_int = interp1d(t, e, kind='cubic', bounds_error=True)
+    a_int = interp1d(ev.t, ev.a, kind='cubic', bounds_error=True)
+    e_int = interp1d(ev.t, ev.e, kind='cubic', bounds_error=True)
 
     def phi_dot(t, phi):  # The orbital phase evolution according to Maggiore (2007)
         return np.sqrt(sp.m_total()/a_int(t)**3) * (1. - e_int(t)**2)**(-3./2.) * (1. + e_int(t)*np.cos(phi))**2

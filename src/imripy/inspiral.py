@@ -444,11 +444,43 @@ class Classic:
                                     )
 
 
+    class Evolution:
+        """
+        This class keeps track of the evolution of an inspiral.
+
+        Attributes:
+            t : np.ndarray
+                The time steps of the evolution
+            a,R : np.ndarray
+                The corresponding values of the semimajor axis - if e=0, this is also called R
+            e  : float/np.ndarray
+                The corresponding values of the eccentricity, default is zero
+            m2 : float/np.ndarray
+                The corresponding values of the mass of the secondary object, if accretion is included
+            msg : string
+                The message of the solve_ivp integration
+            sp : merger_system.SystemProp
+                The system properties used in the evolution
+        """
+        def __init__(self, sp, t, a, e=0., m2=None, msg=None):
+            self.sp = sp
+            self.t = t
+            self.a = a
+            if not isinstance(e, (collections.Sequence, np.ndarray)) and e == 0.:
+                self.R = a
+            self.e = e
+            if m2 is None:
+                self.m2 = sp.m2
+            else:
+                self.m2 = m2
+            self.msg=msg
+
+
     def evolve_circular_binary(sp, R_0, R_fin=0., t_0=0., t_fin=None, acc=1e-8, verbose = 1, accretion=False):
         """
         The function evolves the differential equation of the radius of the circular orbit of the inspiralling system
             dR/dt = dE/dt  /  (dE/dR)
-            where dE/dt includes the energy loss due to gravitational wave radiation and dynamical friction
+            where dE/dt includes the energy loss due to gravitational wave radiation, dynamical friction and possibly accretion
 
         Parameters:
             sp (SystemProp) : The object describing the properties of the inspiralling system
@@ -461,13 +493,8 @@ class Classic:
             accretion(bool) : A parameter wether to include accretion effects of the secondary black hole
 
         Returns:
-            t : np.ndarray
-                The time steps the integration returns. The first is t_0
-            R : np.ndarray
-                The corresponding radii at the given time steps
-         if accretion=True
-            m2 : np.ndarray if accretion is True
-                The corresponding secondary black hole masses
+            ev : Evolution
+                An evolution object that contains the results
         """
         t_coal =  5./256. * R_0**4/sp.m_total()**2 /sp.m_reduced()
         if t_fin is None:
@@ -529,16 +556,14 @@ class Classic:
             print(Int.message)
             print(" -> Evolution took ", "{0:.4e}".format((t[-1] - t[0])/ms.year_to_pc), " yrs")
         if accretion:
-            return t, R, m2
-        return t, R
+            return Classic.Evolution(sp, t, R, m2=m2, msg=Int.message)
+        return Classic.Evolution(sp, t, R, msg=Int.message)
 
 
     def evolve_elliptic_binary(sp, a_0, e_0, a_fin=0., t_0=0., t_fin=None, acc=1e-8, verbose = 1, accretion=False):
         """
         The function evolves the coupled differential equations of the semimajor axis and eccentricity of the Keplerian orbits of the inspiralling system
-            da/dt = da/dt  /  (dE/da)
-            de/dt =
-            where dE/dt includes the energy loss due to gravitational wave radiation and dynamical friction
+            by tracking orbital energy and angular momentum loss due  to gravitational wave radiation, dynamical friction and possibly accretion
 
         Parameters:
             sp (SystemProp) : The object describing the properties of the inspiralling system
@@ -551,15 +576,8 @@ class Classic:
             verbose (int)   : A parameter describing how verbose the function should be
 
         Returns:
-            t : np.ndarray
-                The time steps the integration returns. The first is t_0
-            a : np.ndarray
-                The corresponding semimajor axes at the given time steps
-            e : np.ndarray
-                The corresponding eccentricities at the given time steps
-         if accretion=True
-            m2 : np.ndarray if accretion is True
-                The corresponding secondary black hole masses
+            ev : Evolution
+                An evolution object that contains the results
         """
         def g(e):
             return e**(12./19.)/(1. - e**2) * (1. + 121./304. * e**2)**(870./2299.)
@@ -628,8 +646,9 @@ class Classic:
             print(Int.message)
             print(" -> Evolution took ", "{0:.4e}".format((t[-1] - t[0])/ms.year_to_pc), " yrs")
         if accretion:
-            return t, a, e, m2
-        return t, a, e
+            return Classic.Evolution(sp, t, a, e=e, m2=m2, msg=Int.message)
+        return Classic.Evolution(sp, t, a, e=e, msg=Int.message)
+
 
 class HaloModel:
     """
