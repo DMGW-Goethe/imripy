@@ -500,7 +500,8 @@ class Classic:
         if t_fin is None:
             t_fin = 1.1 * t_coal *( 1. - R_fin**4 / R_0**4)         # This is 10% above the maximum time the system should reach R_fin
 
-        print(t_fin)
+        if R_fin == 0.:
+            R_fin = sp.r_isco()
         R_scale = R_fin                 # It's nice for the differential solver to rescale the equations
         t_scale = t_fin
         if accretion:
@@ -587,6 +588,8 @@ class Classic:
         if t_fin is None:
             t_fin = 1.1 * t_coal *( 1. - a_fin**4 / a_0**4)
 
+        if a_fin == 0.:
+            a_fin = sp.r_isco()
         a_scale = a_fin
         t_scale = t_fin
         if accretion:
