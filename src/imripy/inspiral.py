@@ -2,10 +2,11 @@ import numpy as np
 from scipy.integrate import solve_ivp, quad, simps
 from scipy.interpolate import griddata
 from scipy.special import ellipeinc, ellipe, ellipkinc, factorial, factorial2, hyp2f1
-import collections
+import collections.abc
 #import sys
 import time
 import imripy.merger_system as ms
+import imripy.halo
 
 
 
@@ -20,6 +21,48 @@ class Classic:
     """
     ln_Lambda = 3.
     dmPhaseSpaceFraction = 0.58
+
+    class EvolutionOptions:
+        """
+        This class allows to modify the behavior of the evolution of the differential equations
+
+        Attributes:
+            accuracy : float
+                An accuracy parameter that is passed to solve_ivp
+            verbose : int
+                A verbosity parameter ranging from 0 to 2
+
+
+            gwEmissionLoss : bool
+                Whether to include energy losses by graviational waves
+            dynamicalFrictionLoss : bool
+                Whether to include energy losses by dynamical friction
+            accretion : bool
+                Whether to include accretion effects and evolve the secondary mass
+
+            haloPhaseSpaceDescription : bool
+                Whether to use the phase space description of the halo to calculate relative velocities
+                This requires the SystemProp.halo to be of type DynamicSS
+
+        """
+        def __init__(self, accuracy=1e-8, verbose=1, elliptic=True, gwEmissionLoss=True, dynamicalFrictionLoss=True, accretion=False, haloPhaseSpaceDescription=False):
+            self.accuracy = accuracy
+            self.verbose = verbose
+            self.elliptic = elliptic
+            self.gwEmissionLoss = gwEmissionLoss
+            self.dynamicalFrictionLoss = dynamicalFrictionLoss
+            self.accretion = accretion
+            self.haloPhaseSpaceDescription = haloPhaseSpaceDescription
+
+        def __str__(self):
+            s = "Options: "
+            if not self.gwEmissionLoss:
+                s += " without gwEmissionLoss,"
+            if not self.dynamicalFrictionLoss:
+                s += " without dynamicalFrictionLoss,"
+            s += " with accretion," if self.accretion else " without accretion"
+            s += " with haloPhaseSpaceDescription" if self.haloPhaseSpaceDescription else " without haloPhaseSpaceDescription"
+            return s
 
 
     def E_orbit(sp, a, e=0.):
@@ -51,9 +94,7 @@ class Classic:
             out : float
                 The derivative of the orbital energy wrt to a of the Keplerian orbit
         """
-        return sp.m2 * sp.mass(a) / 2. / a**2  * ( 1.
-                                                        - a*sp.dmass_dr(a)/sp.mass(a)
-                                                    )
+        return sp.m2 * sp.mass(a) / 2. / a**2  * ( 1.  - a*sp.dmass_dr(a)/sp.mass(a) )
 
     def L_orbit(sp, a, e):
         """
@@ -87,9 +128,7 @@ class Classic:
             out : float
                 The derivative of the orbital energy wrt to a of the Keplerian orbit
         """
-        return sp.m2 * sp.mass(a) / 2. / a**2  * ( 1.
-                                                     - 4.*np.pi * sp.halo.density(a)* a**3 / sp.mass(a)
-                                                     )
+        return sp.m2 * sp.mass(a) / 2. / a**2  * ( 1. - sp.dmass_dr(a) * a / sp.mass(a) )
 
 
     def dE_gw_dt(sp, a, e=0.):
@@ -110,7 +149,25 @@ class Classic:
         return -32./5. * sp.m_reduced(a)**2 * sp.m_total(a)**3 / a**5  / (1. - e**2)**(7./2.) * (1. + 73./24. * e**2 + 37./96. * e**4)
 
 
-    def F_df(sp, r, v):
+    def dL_gw_dt(sp, a, e):
+        """
+        The function gives the loss of angular momentum due to radiation of gravitational waves of the smaller object
+           on a Keplerian orbit with semimajor axis a and eccentricity e
+        According to Maggiore (2007)
+
+        Parameters:
+            sp (SystemProp) : The object describing the properties of the inspiralling system
+            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
+            e  (float)      : The eccentricity of the Keplerian orbit
+
+        Returns:
+            out : float
+                The angular momentum loss due to radiation of gravitational waves
+        """
+        return -32./5. * sp.m_reduced(a)**2 * sp.m_total(a)**(5./2.) / a**(7./2.)  / (1. - e**2)**2 * (1. + 7./8.*e**2)
+
+
+    def F_df(sp, r, v, opt=EvolutionOptions()):
         """
         The function gives the force of the dynamical friction of an object inside a dark matter halo at radius r (since we assume a spherically symmetric halo)
             and with velocity v
@@ -120,6 +177,7 @@ class Classic:
             sp (SystemProp) : The object describing the properties of the inspiralling system
             r  (float)      : The radius of the orbiting object
             v  (float)      : The speed of the orbiting object wrt to the dark matter halo
+            opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : float
@@ -128,10 +186,12 @@ class Classic:
         ln_Lambda = Classic.ln_Lambda
         if ln_Lambda < 0.:
             ln_Lambda = np.log(sp.m1/sp.m2)/2.
+        if opt.haloPhaseSpaceDescription:
+            return 4.*np.pi * sp.m2**2 * sp.halo.density(r, v_max=v) * ln_Lambda / v**2
         return 4.*np.pi * sp.m2**2 * sp.halo.density(r) * Classic.dmPhaseSpaceFraction * ln_Lambda / v**2
 
 
-    def dE_df_dt(sp, a, e=0.):
+    def dE_df_dt(sp, a, e=0., opt=EvolutionOptions()):
         """
         The function gives the energy loss due to dynamical friction of the smaller object with the dark matter halo
            on a Keplerian orbit with semimajor axis a and eccentricity e
@@ -142,6 +202,7 @@ class Classic:
             sp (SystemProp) : The object describing the properties of the inspiralling system
             a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
             e  (float)      : The eccentricity of the Keplerian orbit
+            opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : float
@@ -149,15 +210,39 @@ class Classic:
         """
         if e == 0.:
             v_s = sp.omega_s(a)*a
-            return - Classic.F_df(sp, a, v_s)*v_s
+            return - Classic.F_df(sp, a, v_s, opt)*v_s
         else:
             if  isinstance(a, (collections.Sequence, np.ndarray)):
-                return np.array([Classic.dE_df_dt(sp, a_i, e) for a_i in a])
+                return np.array([Classic.dE_df_dt(sp, a_i, e, opt) for a_i in a])
             def integrand(phi):
                 r = a*(1. - e**2)/(1. + e*np.cos(phi))
                 v_s = np.sqrt(sp.m_total(a) *(2./r - 1./a))
-                return Classic.F_df(sp, r, v_s)*v_s / (1.+e*np.cos(phi))**2
+                return Classic.F_df(sp, r, v_s, opt)*v_s / (1.+e*np.cos(phi))**2
             return -(1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
+
+
+    def dL_df_dt(sp, a, e, opt=EvolutionOptions()):
+        """
+        The function gives the angular momentum loss due to dynamical friction of the smaller object with the dark matter halo
+           on a Keplerian orbit with semimajor axis a and eccentricity e
+        According to https://arxiv.org/abs/1908.10241
+
+        Parameters:
+            sp (SystemProp) : The object describing the properties of the inspiralling system
+            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
+            e  (float)      : The eccentricity of the Keplerian orbit
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+
+        Returns:
+            out : float
+                The angular momentum loss due to dynamical friction
+        """
+        def integrand(phi):
+            r = a*(1. - e**2)/(1. + e*np.cos(phi))
+            v_s = np.sqrt(sp.m_total(a) *(2./r - 1./a))
+            return Classic.F_df(sp, r, v_s, opt) / v_s / (1.+e*np.cos(phi))**2
+        return -(1.-e**2)**(3./2.)/2./np.pi *np.sqrt(sp.m_total(a)* a*(1.-e**2)) *  quad(integrand, 0., 2.*np.pi, limit = 100)[0]
+
 
     def BH_cross_section(sp, v):
         """
@@ -222,6 +307,7 @@ class Classic:
                 return Classic.dm2_dt(sp, r, v_s) / (1.+e*np.cos(phi))**2
             return (1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
+
     def F_acc(sp, r, v):
         """
         The function gives the force of the accretion of an object inside a dark matter halo at radius r (since we assume a spherically symmetric halo)
@@ -269,70 +355,6 @@ class Classic:
             return -(1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
 
-    def dE_dt(sp, a, e=0., accretion=False):
-        """
-        The function gives the total energy loss of the orbiting small black hole due to the dissipative effects
-           on a Keplerian orbit with semimajor axis a and eccentricity e
-
-        Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
-            accretion (bool): A boolean deciding wether to include accretion effects
-
-        Returns:
-            out : float
-                The total energy loss
-        """
-        dE_gw_dt = Classic.dE_gw_dt(sp, a, e)
-        dE_df_dt = Classic.dE_df_dt(sp, a, e)
-        if accretion:
-            dE_acc_dt = Classic.dE_acc_dt(sp, a, e)
-
-        #print("dE_gw_dt=", dE_gw_dt, "dE_df_dt=", dE_df_dt, "dE_acc_dt=", dE_acc_dt if accretion else 0.)
-        return ( dE_gw_dt + dE_df_dt + (dE_acc_dt if accretion else 0.))
-
-
-    def dL_gw_dt(sp, a, e):
-        """
-        The function gives the loss of angular momentum due to radiation of gravitational waves of the smaller object
-           on a Keplerian orbit with semimajor axis a and eccentricity e
-        According to Maggiore (2007)
-
-        Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
-
-        Returns:
-            out : float
-                The angular momentum loss due to radiation of gravitational waves
-        """
-        return -32./5. * sp.m_reduced(a)**2 * sp.m_total(a)**(5./2.) / a**(7./2.)  / (1. - e**2)**2 * (1. + 7./8.*e**2)
-
-
-    def dL_df_dt(sp, a, e):
-        """
-        The function gives the angular momentum loss due to dynamical friction of the smaller object with the dark matter halo
-           on a Keplerian orbit with semimajor axis a and eccentricity e
-        According to https://arxiv.org/abs/1908.10241
-
-        Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
-
-        Returns:
-            out : float
-                The angular momentum loss due to dynamical friction
-        """
-        def integrand(phi):
-            r = a*(1. - e**2)/(1. + e*np.cos(phi))
-            v_s = np.sqrt(sp.m_total(a) *(2./r - 1./a))
-            return Classic.F_df(sp, r, v_s) / v_s / (1.+e*np.cos(phi))**2
-        return -(1.-e**2)**(3./2.)/2./np.pi *np.sqrt(sp.m_total(a)* a*(1.-e**2)) *  quad(integrand, 0., 2.*np.pi, limit = 100)[0]
-
-
     def dL_acc_dt(sp, a, e):
         """
         The function gives the angular momentum loss due to accretion of the small black hole inside the dark matter halo
@@ -355,7 +377,31 @@ class Classic:
         return -(1.-e**2)**(3./2.)/2./np.pi *np.sqrt(sp.m_total(a) * a*(1.-e**2)) *  quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
 
-    def dL_dt(sp, a, e, accretion=False):
+    def dE_dt(sp, a, e=0., opt=EvolutionOptions()):
+        """
+        The function gives the total energy loss of the orbiting small black hole due to the dissipative effects
+           on a Keplerian orbit with semimajor axis a and eccentricity e
+
+        Parameters:
+            sp (SystemProp) : The object describing the properties of the inspiralling system
+            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
+            e  (float)      : The eccentricity of the Keplerian orbit
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+
+        Returns:
+            out : float
+                The total energy loss
+        """
+        dE_gw_dt = Classic.dE_gw_dt(sp, a, e) if opt.gwEmissionLoss else 0.
+        dE_df_dt = Classic.dE_df_dt(sp, a, e, opt) if opt.dynamicalFrictionLoss else 0.
+        dE_acc_dt = Classic.dE_acc_dt(sp, a, e) if opt.accretion else 0.
+
+        if opt.verbose > 2:
+            print("dE_gw_dt=", dE_gw_dt, "dE_df_dt=", dE_df_dt, "dE_acc_dt=", dE_acc_dt)
+        return ( dE_gw_dt + dE_df_dt + dE_acc_dt )
+
+
+    def dL_dt(sp, a, e, opt=EvolutionOptions()):
         """
         The function gives the total angular momentum loss of the secondary object
             on a Keplerian orbit with semimajor axis a and eccentricity e
@@ -364,21 +410,22 @@ class Classic:
             sp (SystemProp) : The object describing the properties of the inspiralling system
             a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
             e  (float)      : The eccentricity of the Keplerian orbit
-            accretion (bool): A boolean deciding wether to include accretion effects
+            opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : float
                 The total angular momentum loss
         """
-        dL_gw_dt = Classic.dL_gw_dt(sp, a, e)
-        dL_df_dt = Classic.dL_df_dt(sp, a, e)
-        if accretion:
-            dL_acc_dt = Classic.dL_acc_dt(sp, a, e)
+        dL_gw_dt = Classic.dL_gw_dt(sp, a, e) if opt.gwEmissionLoss else 0.
+        dL_df_dt = Classic.dL_df_dt(sp, a, e, opt) if opt.dynamicalFrictionLoss else 0.
+        dL_acc_dt = Classic.dL_acc_dt(sp, a, e) if opt.accretion else 0.
 
-        #print("dL_gw_dt=", dL_gw_dt, "dL_df_dt=", dL_df_dt, "dL_acc_dt=", dL_acc_dt if accretion else 0.)
-        return  (dL_gw_dt + dL_df_dt + (dL_acc_dt if accretion else 0.))
+        if opt.verbose > 2:
+            print("dL_gw_dt=", dL_gw_dt, "dL_df_dt=", dL_df_dt, "dL_acc_dt=", dL_acc_dt)
+        return  (dL_gw_dt + dL_df_dt + dL_acc_dt)
 
-    def da_dt(sp, a, e=0., accretion=False, dm2_dt = 0.):
+
+    def da_dt(sp, a, e=0., opt=EvolutionOptions(), dm2_dt = 0.):
         """
         The function gives the secular time derivative of the semimajor axis a (or radius for a circular orbit) due to gravitational wave emission and dynamical friction
             of the smaller object on a Keplerian orbit with semimajor axis a and eccentricity e
@@ -389,13 +436,14 @@ class Classic:
             sp (SystemProp) : The object describing the properties of the inspiralling system
             a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
             e  (float)      : The eccentricity of the Keplerian orbit
-            accretion (bool): A boolean deciding wether to include accretion effects
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+            dm2_dt (float)  : If accretion is included, the time derivative of the mass of the secondary black hole
 
         Returns:
             out : float
                 The secular time derivative of the semimajor axis
         """
-        dE_dt = Classic.dE_dt(sp, a, e, accretion)
+        dE_dt = Classic.dE_dt(sp, a, e, opt)
         dE_orbit_dm2 = - sp.mass(a)/2./a
         dE_orbit_da = Classic.dE_orbit_da(sp, a, e)
 
@@ -403,7 +451,7 @@ class Classic:
                     / dE_orbit_da )
 
 
-    def de_dt(sp, a, e, da_dt, accretion=False, dm2_dt=0.):
+    def de_dt(sp, a, e, da_dt, opt=EvolutionOptions(), dm2_dt=0.):
         """
         The function gives the secular time derivative of the eccentricity due to gravitational wave emission and dynamical friction
             of the smaller object on a Keplerian orbit with semimajor axis a and eccentricity e
@@ -422,18 +470,18 @@ class Classic:
             out : float
                 The secular time derivative of the eccentricity
         """
-        if e <= 0.:
+        if e <= 0. or not opt.elliptic:
             return 0.
 
         g = 1. / sp.m_total(a)**2 / sp.m_reduced(a)**3
         dg_dm2 = -2. / sp.mass(a)**3 / sp.m2**3 * (1. + 3./2. * sp.mass(a) / sp.m2)
         #dg_dm2 = 0.
-        dg_da = -2. / sp.mass(a)**3 / sp.m2**3 * (1. + 3./2. * sp.m2 / sp.mass(a)) * sp.dmass_dr(a)
-        #dg_da = 0.
+        #dg_da = -2. / sp.mass(a)**3 / sp.m2**3 * (1. + 3./2. * sp.m2 / sp.mass(a)) * sp.dmass_dr(a)
+        dg_da = 0.
 
-        dE_dt = Classic.dE_dt(sp, a, e, accretion)
+        dE_dt = Classic.dE_dt(sp, a, e, opt)
         E = Classic.E_orbit(sp, a, e)
-        dL_dt = Classic.dL_dt(sp, a, e, accretion)
+        dL_dt = Classic.dL_dt(sp, a, e, opt)
         L = Classic.L_orbit(sp, a, e)
 
         #print("dE_dt/E=", dE_dt/E, "2dL_dt/L=", 2.*dL_dt/L, "diff=", dE_dt/E + 2.*dL_dt/L, "dg_dt/g=", (dg_dm2*dm2_dt + dg_da*da_dt)/g, )
@@ -444,11 +492,15 @@ class Classic:
                                     )
 
 
-    class Evolution:
+    class EvolutionResults:
         """
         This class keeps track of the evolution of an inspiral.
 
         Attributes:
+            sp : merger_system.SystemProp
+                The system properties used in the evolution
+            opt : Classic.EvolutionOptions
+                The options used during the evolution
             t : np.ndarray
                 The time steps of the evolution
             a,R : np.ndarray
@@ -459,109 +511,20 @@ class Classic:
                 The corresponding values of the mass of the secondary object, if accretion is included
             msg : string
                 The message of the solve_ivp integration
-            sp : merger_system.SystemProp
-                The system properties used in the evolution
         """
-        def __init__(self, sp, t, a, e=0., m2=None, msg=None):
+        def __init__(self, sp, options, t, a, msg=None):
             self.sp = sp
+            self.options = options
+            self.msg=msg
             self.t = t
             self.a = a
-            if not isinstance(e, (collections.Sequence, np.ndarray)) and e == 0.:
+            if not options.elliptic:
+                self.e = 0.
                 self.R = a
-            self.e = e
-            if m2 is None:
-                self.m2 = sp.m2
-            else:
-                self.m2 = m2
-            self.msg=msg
 
 
-    def evolve_circular_binary(sp, R_0, R_fin=0., t_0=0., t_fin=None, acc=1e-8, verbose = 1, accretion=False):
-        """
-        The function evolves the differential equation of the radius of the circular orbit of the inspiralling system
-            dR/dt = dE/dt  /  (dE/dR)
-            where dE/dt includes the energy loss due to gravitational wave radiation, dynamical friction and possibly accretion
 
-        Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            R_0  (float)    : The initial orbital radius
-            R_fin (float)   : The orbital radius at which to stop evolution
-            t_0    (float)  : The initial time
-            t_fin  (float)  : The time until the system should be evolved, if None then the estimated coalescence time will be used
-            acc    (float)  : An accuracy parameter that is passed to solve_ivp
-            verbose (int)   : A parameter describing how verbose the function should be
-            accretion(bool) : A parameter wether to include accretion effects of the secondary black hole
-
-        Returns:
-            ev : Evolution
-                An evolution object that contains the results
-        """
-        t_coal =  5./256. * R_0**4/sp.m_total()**2 /sp.m_reduced()
-        if t_fin is None:
-            t_fin = 1.1 * t_coal *( 1. - R_fin**4 / R_0**4)         # This is 10% above the maximum time the system should reach R_fin
-
-        if R_fin == 0.:
-            R_fin = sp.r_isco()
-        R_scale = R_fin                 # It's nice for the differential solver to rescale the equations
-        t_scale = t_fin
-        if accretion:
-            m_scale = sp.m2
-
-        #t_step_max = t_fin/1e4 / t_coal
-        t_step_max = np.inf
-        if verbose > 0:
-            print("Evolving from ", R_0/sp.r_isco(), " to ", R_fin/sp.r_isco(),"r_isco, " + ("with" if accretion else "without") + " accretion")
-
-        def dy_dt(t, y, *args):
-            sp = args[0]
-            t = t*t_scale
-            R = y[0]*R_scale
-            if accretion:
-                sp.m2 = y[1]*m_scale
-
-            if verbose > 1:
-                tic = time.perf_counter()
-
-            if accretion:
-                dm2_dt =  Classic.dm2_dt_avg(sp, R)
-            else:
-                dm2_dt = 0.
-            dR_dt =  Classic.da_dt(sp, R, accretion=accretion, dm2_dt=dm2_dt)
-
-            if verbose > 1:
-                toc = time.perf_counter()
-                print("t=", t, "R=", R, "dR/dt=", dR_dt, "m2=", sp.m2, "dm2/dt=", dm2_dt,
-                                    "elapsed real time: ", toc-tic)
-
-            if accretion:
-                return [t_scale/R_scale * dR_dt, t_scale/m_scale * dm2_dt]
-            return t_scale/R_scale * dR_dt
-
-        fin_reached = lambda t,y, *args: y[0] - R_fin/R_scale          # Give the termination condition that R = R_fin
-        fin_reached.terminal = True
-
-        if accretion:
-            y_0 = [R_0/R_scale, sp.m2/m_scale]
-        else:
-            y_0 = [R_0/R_scale]
-
-        Int = solve_ivp(dy_dt, [t_0/t_scale, (t_0+t_fin)/t_scale], y_0, dense_output=True, args=([sp]), events=fin_reached, max_step=t_step_max/t_scale,
-                                                                                        method = 'RK45', atol=acc, rtol=acc)
-
-        R = Int.y[0]*R_scale
-        t = Int.t*t_scale
-        if accretion:
-            m2 = Int.y[1]*m_scale
-
-        if verbose > 0:
-            print(Int.message)
-            print(" -> Evolution took ", "{0:.4e}".format((t[-1] - t[0])/ms.year_to_pc), " yrs")
-        if accretion:
-            return Classic.Evolution(sp, t, R, m2=m2, msg=Int.message)
-        return Classic.Evolution(sp, t, R, msg=Int.message)
-
-
-    def evolve_elliptic_binary(sp, a_0, e_0, a_fin=0., t_0=0., t_fin=None, acc=1e-8, verbose = 1, accretion=False):
+    def Evolve(sp, a_0, e_0=0., a_fin=0., t_0=0., t_fin=None, opt=EvolutionOptions()):
         """
         The function evolves the coupled differential equations of the semimajor axis and eccentricity of the Keplerian orbits of the inspiralling system
             by tracking orbital energy and angular momentum loss due  to gravitational wave radiation, dynamical friction and possibly accretion
@@ -573,85 +536,95 @@ class Classic:
             a_fin (float)   : The semimajor axis at which to stop evolution
             t_0    (float)  : The initial time
             t_fin  (float)  : The time until the system should be evolved, if None then the estimated coalescence time will be used
-            acc    (float)  : An accuracy parameter that is passed to solve_ivp
-            verbose (int)   : A parameter describing how verbose the function should be
+            opt   (EvolutionOptions) : Collecting the options for the evolution of the differential equations
 
         Returns:
             ev : Evolution
                 An evolution object that contains the results
         """
+        opt.elliptic = e_0 > 0.
+
         def g(e):
             return e**(12./19.)/(1. - e**2) * (1. + 121./304. * e**2)**(870./2299.)
 
         t_coal =  5./256. * a_0**4/sp.m_total()**2 /sp.m_reduced()
-        t_coal = t_coal * 48./19. / g(e_0)**4 * quad(lambda e: g(e)**4 *(1-e**2)**(5./2.) /e/(1. + 121./304. * e**2), 0., e_0, limit=100)[0]   # The inspiral time according to Maggiore (2007)
+        if opt.elliptic:
+            t_coal = t_coal * 48./19. / g(e_0)**4 * quad(lambda e: g(e)**4 *(1-e**2)**(5./2.) /e/(1. + 121./304. * e**2), 0., e_0, limit=100)[0]   # The inspiral time according to Maggiore (2007)
+
         if t_fin is None:
-            t_fin = 1.1 * t_coal *( 1. - a_fin**4 / a_0**4)
+            t_fin = 1.01 * t_coal *( 1. - a_fin**4 / a_0**4)    # This is the time it takes with just gravitational wave emission
 
         if a_fin == 0.:
-            a_fin = sp.r_isco()
+            a_fin = sp.r_isco()     # Stop evolution at r_isco
+
         a_scale = a_fin
         t_scale = t_fin
-        if accretion:
+        if opt.accretion:
             m_scale = sp.m2
 
-        #t_step_max = t_fin/1e4 / t_coal
         t_step_max = np.inf
-        if verbose > 0:
-            print("Evolving from ", a_0/sp.r_isco(), " to ", a_fin/sp.r_isco(),"r_isco with initial eccentricity ", e_0)
+        if opt.verbose > 0:
+            print("Evolving from ", a_0/sp.r_isco(), " to ", a_fin/sp.r_isco(),"r_isco ", ("with initial eccentricity " + str(e_0)) if opt.elliptic else " on circular orbits", " with ", opt)
 
+        # Define the evolution function
         def dy_dt(t, y, *args):
             sp = args[0]
+            opt = args[1]
             t = t*t_scale
-            a = y[0]*a_scale
-            e = y[1]
-            if accretion:
-                sp.m2 = y[2] * m_scale
+            # Unpack array
+            i = 0
+            a = y[i]*a_scale; i += 1
+            e = y[i] if opt.elliptic else 0.; i = i + 1 if opt.elliptic else i
+            sp.m2 = y[i] * m_scale if opt.accretion else sp.m2; i = i + 1 if opt.accretion else i
 
-            if verbose > 1:
+            if opt.verbose > 1:
                 tic = time.perf_counter()
-            if accretion:
-                dm2_dt = Classic.dm2_dt_avg(sp, a, e)
-            else:
-                dm2_dt = 0.
-            da_dt = Classic.da_dt(sp, a, e, accretion=accretion, dm2_dt=dm2_dt)
-            de_dt = Classic.de_dt(sp, a, e, da_dt, accretion=accretion, dm2_dt=dm2_dt)
 
-            if verbose > 1:
+            dm2_dt = Classic.dm2_dt_avg(sp, a, e) if opt.accretion else 0.
+            da_dt = Classic.da_dt(sp, a, e, opt, dm2_dt=dm2_dt)
+            de_dt = Classic.de_dt(sp, a, e, da_dt, opt, dm2_dt=dm2_dt) if opt.elliptic else 0.
+
+            if opt.verbose > 1:
                 toc = time.perf_counter()
                 print("t=", t, "a=", a, "da/dt=", da_dt, "e=", e, "de/dt=", de_dt, "m2=", sp.m2, "dm2_dt=", dm2_dt,
                         " elapsed real time: ", toc-tic)
 
+            dy = np.array([da_dt/a_scale])
+            if opt.elliptic:
+                dy = np.append(dy, de_dt)
+            if opt.accretion:
+                dy = np.append(dy, dm2_dt/m_scale)
+            return dy * t_scale
 
-            if accretion:
-                return [t_scale/a_scale * da_dt, t_scale* de_dt, t_scale/m_scale * dm2_dt]
-            return [t_scale/a_scale * da_dt, t_scale * de_dt]
-
-        fin_reached = lambda t,y, *args: y[0] - a_fin/a_scale           # Give the termination condition such that a = a_fin
+        # Termination condition
+        fin_reached = lambda t,y, *args: y[0] - a_fin/a_scale
         fin_reached.terminal = True
 
-        if accretion:
-            y_0 = [a_0/a_scale, e_0, sp.m2/m_scale]
-        else:
-            y_0 = [a_0/a_scale, e_0]
+        # Collect initial conditions
+        y_0 = np.array([a_0 / a_scale])
+        if opt.elliptic:
+            y_0 = np.append(y_0, e_0)
+        if opt.accretion:
+            y_0 = np.append(y_0, sp.m2/m_scale)
 
-        Int = solve_ivp(dy_dt, [t_0/t_scale, (t_0+t_fin)/t_scale], y_0, dense_output=True, args=([sp]), events=fin_reached, max_step=t_step_max/t_scale,
-                                                                                        method = 'RK45', atol=acc, rtol=acc)
+        # Evolve
+        Int = solve_ivp(dy_dt, [t_0/t_scale, (t_0+t_fin)/t_scale], y_0, dense_output=True, args=(sp,opt), events=fin_reached, max_step=t_step_max/t_scale,
+                                                                                        method = 'RK45', atol=opt.accuracy, rtol=opt.accuracy)
 
-        a = Int.y[0]*a_scale
-        e = np.clip(Int.y[1], 1e-50, None)
-        #e = Int.y[1]
+        # Collect results
         t = Int.t*t_scale
-        if accretion:
-            m2 = Int.y[2]*m_scale
+        i = 0
+        a = Int.y[i]*a_scale; i += 1
+        ev = Classic.EvolutionResults(sp, opt, t, a, msg=Int.message)
+        ev.e = np.clip(Int.y[i], 1e-50, None) if opt.elliptic else 0. # Make sure that e > 0 so that the equations used in waveform.py do not fail
+        i = i + 1 if opt.elliptic else i
+        ev.m2 = Int.y[i]*m_scale if opt.accretion else sp.m2; i = i + 1 if opt.accretion else i
 
-        if verbose > 0:
+        if opt.verbose > 0:
             print(Int.message)
             print(" -> Evolution took ", "{0:.4e}".format((t[-1] - t[0])/ms.year_to_pc), " yrs")
-        if accretion:
-            return Classic.Evolution(sp, t, a, e=e, m2=m2, msg=Int.message)
-        return Classic.Evolution(sp, t, a, e=e, msg=Int.message)
 
+        return ev
 
 class HaloModel:
     """

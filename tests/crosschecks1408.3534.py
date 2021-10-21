@@ -175,8 +175,7 @@ plotPhiprimeprime(sp_1, sp_1.r_isco(), 1e5*sp_1.r_isco())
 plt.legend(); plt.grid()
 
 R0 = 80.*sp_1.r_isco()
-#t, R = inspiral.Classic.evolve_circular_binary(sp_1, R0, sp_1.r_isco(), acc=1e-12, verbose=False)
-ev = inspiral.Classic.evolve_circular_binary(sp_1, R0, sp_1.r_isco(), acc=1e-12, verbose=False)
+ev = inspiral.Classic.Evolve(sp_1, R0, a_fin=sp_1.r_isco(), opt=inspiral.Classic.EvolutionOptions(accuracy=1e-12))
 omega_s = sp_1.omega_s(ev.R)
 
 plt.figure()

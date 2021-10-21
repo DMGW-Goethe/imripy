@@ -28,14 +28,10 @@ sp_1 = ms.SystemProp(m1, m2, halo.Spike(rho_spike, r_spike, 7./3.), D, inclinati
 sp_2 = ms.SystemProp(m1, m2, halo.Spike(rho_spike, r_spike, 2.),    D, inclination_angle=iota, pericenter_angle=beta)
 sp_3 = ms.SystemProp(m1, m2, halo.Spike(rho_spike, r_spike, 1.5),   D, inclination_angle=iota, pericenter_angle=beta)
 
-#t_0, a_0, e_0 = inspiral.Classic.evolve_elliptic_binary(sp_0, a0, e0, afin, verbose=1)
-#t_1, a_1, e_1 = inspiral.Classic.evolve_elliptic_binary(sp_1, a0, e0, afin, verbose=1)
-#t_2, a_2, e_2 = inspiral.Classic.evolve_elliptic_binary(sp_2, a0, e0, afin, verbose=1)
-#t_3, a_3, e_3 = inspiral.Classic.evolve_elliptic_binary(sp_3, a0, e0, afin, verbose=1)
-ev_0 = inspiral.Classic.evolve_elliptic_binary(sp_0, a0, e0, afin, verbose=1)
-ev_1 = inspiral.Classic.evolve_elliptic_binary(sp_1, a0, e0, afin, verbose=1)
-ev_2 = inspiral.Classic.evolve_elliptic_binary(sp_2, a0, e0, afin, verbose=1)
-ev_3 = inspiral.Classic.evolve_elliptic_binary(sp_3, a0, e0, afin, verbose=1)
+ev_0 = inspiral.Classic.Evolve(sp_0, a0, e0, a_fin=afin)
+ev_1 = inspiral.Classic.Evolve(sp_1, a0, e0, a_fin=afin)
+ev_2 = inspiral.Classic.Evolve(sp_2, a0, e0, a_fin=afin)
+ev_3 = inspiral.Classic.Evolve(sp_3, a0, e0, a_fin=afin)
 
 fig, (ax_p, ax_e) = plt.subplots(2, 1, figsize=(16,20))
 ax_p.plot(ev_0.t/ms.year_to_pc, ev_0.a*(1.-ev_0.e**2)/sp_0.m1, label='0')
@@ -67,21 +63,23 @@ def plotWaveform(sp, ev, ax_h, f_start, t_len=None, label=" "):
     #ax_h.plot(t_grid, h_plus, label=r"$h_+^{" + label +"}$")
     ax_h.plot((t_grid-t_start)/ms.s_to_pc, h_cross, label=r"$h_x^{" + label +"}$")
 
+'''
 fig, ax_h = plt.subplots(1,1, figsize=(20, 10))
 
-plotWaveform(sp_0, ev_0, ax_h, f_start=1e-2*ms.hz_to_invpc, label="0")
-plotWaveform(sp_1, ev_1, ax_h, f_start=1e-2*ms.hz_to_invpc, label="1")
+plotWaveform(sp_0, ev_0, ax_h, f_start=1e-3*ms.hz_to_invpc, label="0")
+plotWaveform(sp_1, ev_1, ax_h, f_start=1e-3*ms.hz_to_invpc, label="1")
 
 ax_h.grid(); ax_h.legend();
+'''
 '''
 a0 = 1e5/(1.-e0**2) * sp_0.m1
 afin = 1. * sp_0.r_isco()
 e0 = 0.6
 
-t_0, a_0, e_0 = inspiral.Classic.evolve_elliptic_binary(sp_0, a0, e0, afin)
-t_1, a_1, e_1 = inspiral.Classic.evolve_elliptic_binary(sp_1, a0, e0, afin, t_fin=t_0[-1]/1e6)
-t_2, a_2, e_2 = inspiral.Classic.evolve_elliptic_binary(sp_2, a0, e0, afin, t_fin=t_0[-1]/1e5)
-t_3, a_3, e_3 = inspiral.Classic.evolve_elliptic_binary(sp_3, a0, e0, afin, t_fin=t_0[-1]/1e4)
+t_0, a_0, e_0 = inspiral.Classic.Evolve(sp_0, a0, e0, afin)
+t_1, a_1, e_1 = inspiral.Classic.Evolve(sp_1, a0, e0, afin, t_fin=t_0[-1]/1e6)
+t_2, a_2, e_2 = inspiral.Classic.Evolve(sp_2, a0, e0, afin, t_fin=t_0[-1]/1e5)
+t_3, a_3, e_3 = inspiral.Classic.Evolve(sp_3, a0, e0, afin, t_fin=t_0[-1]/1e4)
 
 fig, (ax_p, ax_e) = plt.subplots(2, 1, figsize=(16,20))
 ax_p.plot(t_0/ms.year_to_pc, a_0*(1.-e_0**2)/sp_0.m1, label='0')

@@ -21,7 +21,7 @@ R_fin = sp.r_isco()
 #R_fin =  [15.*sp.r_isco, sp.r_isco]
 
 #t, R = inspiral.Classic.evolve_circular_binary(sp, R0, R_fin, acc=1e-8)
-ev = inspiral.Classic.evolve_circular_binary(sp, R0, R_fin, acc=1e-8)
+ev = inspiral.Classic.Evolve(sp, R0, a_fin=R_fin, opt=inspiral.Classic.EvolutionOptions(accuracy=1e-8))
 omega_s = sp.omega_s(ev.R)
 f_gw = omega_s/np.pi
 omega_s_obs = omega_s/(1. + sp.z())

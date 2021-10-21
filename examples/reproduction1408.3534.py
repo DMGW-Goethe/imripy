@@ -18,11 +18,11 @@ sp_2 = ms.SystemProp(m1, m2, halo.SpikedNFW( 2.68e-13, 23.1, 0.54, 2.), D)
 sp_3 = ms.SystemProp(m1, m2, halo.SpikedNFW( 2.68e-13, 23.1, 0.54, 7./3.), D)
 
 def getObservablePhi(sp, R0, R_fin, acc=1e-14):
-    t, R = inspiral.Classic.evolve_circular_binary(sp, R0, R_fin, t_0=0., acc=acc)
-    omega_s = sp.omega_s(R)
-    print(len(t), t)
+    ev = inspiral.Classic.Evolve(sp, R0, a_fin=R_fin, t_0=0., opt=inspiral.Classic.EvolutionOptions(accuracy=acc))
+    omega_s = sp.omega_s(ev.R)
+    print(len(ev.t), ev.t)
 
-    f_gw, h, _, Psi, t_of_f, PhiTild, A = waveform.h_2(sp, t, omega_s, R, dbg=True, acc=acc)
+    f_gw, h, _, Psi, t_of_f, PhiTild, A = waveform.h_2(sp, ev, dbg=True, acc=acc)
 
     return  f_gw, PhiTild, h
 
