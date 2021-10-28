@@ -11,7 +11,6 @@ import imripy.detector as detector
 solar_mass_in_pc = 4.8e-14
 year_in_pc = 0.3064
 
-#sp = ms.SystemProp(10**3 *solar_mass_in_pc, 1 * solar_mass_in_pc, 1e3, ms.SpikedNFW( 2.68e-13, 23.1, 0.54, 7./3.))
 sp = ms.SystemProp(1e3 *solar_mass_in_pc, 1. * solar_mass_in_pc, halo.ConstHalo(0.))
 
 print(sp.m_chirp(), sp.redshifted_m_chirp())

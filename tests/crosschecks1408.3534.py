@@ -157,7 +157,7 @@ def plotWaveform(sp, ev):
 m1 = 1e3 *ms.solar_mass_to_pc
 m2 = 1. * ms.solar_mass_to_pc
 D = 1e3
-sp_1 = ms.SystemProp(m1, m2, halo.Spike( 226.*ms.solar_mass_to_pc, 0.54, 7./3.), D)
+sp_1 = ms.SystemProp(m1, m2, halo.Spike( 226.*ms.solar_mass_to_pc, 0.54, 7./3.), D, includeHaloInTotalMass=True)
 
 plotHalo(sp_1, 4./6.*sp_1.r_isco(), 1e4)
 plt.legend(); plt.grid()
