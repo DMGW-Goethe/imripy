@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.interpolate import interp1d, griddata
 from scipy.integrate import odeint, quad, simps
+from scipy.special import gamma
 #import matplotlib.pyplot as plt
 import collections
 import imripy.cosmo as cosmo
@@ -707,6 +708,30 @@ class DynamicSS(MatterHalo):
 
         # The Eddington inversion is not guaranteed to give a physical solution
         f_grid[np.where(f_grid < 0.)] =  0.
+        return DynamicSS(Eps_grid, f_grid, extPotential)
+
+    def FromSpike(Eps_grid, sp, spike):
+        """
+        This function implements the analytically known distribution function f of a power-law spike, given a grid in relative energy.
+        The analytic equation is only valid in a central potential of m1, which is extracted from the SystemProp object.
+
+        Parameters:
+            Eps_grid : array_like
+                The grid in relative energy on which to calculate the distribution function
+            sp  : merger_system.SystemProp
+                The object that contains info about the binary system, m1 is extracted from this
+            spike : Spike object
+                The Spike object that contains the spike parameters
+
+        Returns:
+            out : DynamicSS object
+                The DynamicSS object with the corresponding distribution function on the grid in relative energy
+
+        """
+        extPotential = lambda r: sp.m1/r
+        f_grid =  (spike.rho_spike * spike.alpha*(spike.alpha-1.)/(2.*np.pi)**(3./2.)
+            * (spike.r_spike/sp.m1)**spike.alpha * gamma(spike.alpha-1.)/gamma(spike.alpha-1./2.)
+            * Eps_grid**(spike.alpha-3./2.) )
         return DynamicSS(Eps_grid, f_grid, extPotential)
 
     def __str__(self):
