@@ -25,7 +25,7 @@ class SystemProp:
     """
 
 
-    def __init__(self, m1, m2, halo, D=1., inclination_angle = 0., pericenter_angle=0.):
+    def __init__(self, m1, m2, halo, D=1., inclination_angle = 0., pericenter_angle=0., includeHaloInTotalMass=False):
         """
         The constructor for the SystemProp class
 
@@ -53,6 +53,8 @@ class SystemProp:
 
         self.inclination_angle = inclination_angle
         self.pericenter_angle = pericenter_angle
+
+        self.includeHaloInTotalMass = includeHaloInTotalMass
 
 
     def r_isco(self):
@@ -154,9 +156,7 @@ class SystemProp:
             out : float or array_like (depending on r)
                 The enclosed mass
         """
-        #return np.ones(np.shape(r))*self.m1 + self.halo.mass(r)
-        return np.ones(np.shape(r))*self.m1
-        # If you want to exclude the halo mass from the energy and angular momentum calculations use the latter
+        return np.ones(np.shape(r))*self.m1 + (self.halo.mass(r) if self.includeHaloInTotalMass else 0.)
 
     def dmass_dr(self, r):
         """
@@ -170,8 +170,7 @@ class SystemProp:
             out : float or array_like (depending on r)
                 The enclosed mass derivative
         """
-        #return 4.*np.pi*r**2 * self.halo.density(r)
-        return 0.
+        return 4.*np.pi*r**2 * self.halo.density(r) if self.includeHaloInTotalMass else 0.
 
 
     def omega_s(self, r):
@@ -187,20 +186,4 @@ class SystemProp:
                 The orbital frequency
         """
         return np.sqrt((self.mass(r) + self.m2)/r**3)
-
-    def omega_s_approx(self, r):
-        """
-        The function returns the angular frequency of the smaller mass m2 in a circular orbit around the central mass without the dark matter halo around it
-        This function exists because some papers use this description, and because for the DynamicSS halo class a call to DynamicSS.mass is computationally expensive.
-
-        Parameters:
-            r : float or array_like
-                The radius at which to evaluate the orbital frequency
-
-        Returns:
-            out : float or array_like (depending on r)
-                The orbital frequency
-        """
-        return np.sqrt((self.m1 + self.m2)/r**3)
-
 
