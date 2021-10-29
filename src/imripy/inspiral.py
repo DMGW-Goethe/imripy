@@ -19,8 +19,8 @@ class Classic:
         ln_Lambda (float): The Coulomb logarithm of the dynamical friction description. Set -1 for ln sqrt(m1/m2). Default is 3.
         dmPhaseSpaceFraction (float) : As the dm particles in the halo are not stationary, the relative velocity effects need to be modeled, here according to https://arxiv.org/pdf/2002.12811.pdf
     """
-    ln_Lambda = 3.
-    dmPhaseSpaceFraction = 0.58
+    ln_Lambda = -1.
+    dmPhaseSpaceFraction = 1.
 
     class EvolutionOptions:
         """
@@ -31,27 +31,29 @@ class Classic:
                 An accuracy parameter that is passed to solve_ivp
             verbose : int
                 A verbosity parameter ranging from 0 to 2
-
-
+            elliptic : bool
+                Whether to model the inspiral on eccentric orbits, is set automatically depending on e0 passed to Evolve
             gwEmissionLoss : bool
                 Whether to include energy losses by graviational waves
             dynamicalFrictionLoss : bool
                 Whether to include energy losses by dynamical friction
             accretion : bool
                 Whether to include accretion effects and evolve the secondary mass
-
+            accretionForceLoss : bool
+                Whether to include the energy loss due to the accretion recoil
             haloPhaseSpaceDescription : bool
                 Whether to use the phase space description of the halo to calculate relative velocities
                 This requires the SystemProp.halo to be of type DynamicSS
 
         """
-        def __init__(self, accuracy=1e-8, verbose=1, elliptic=True, gwEmissionLoss=True, dynamicalFrictionLoss=True, accretion=False, haloPhaseSpaceDescription=False):
+        def __init__(self, accuracy=1e-8, verbose=1, elliptic=True, gwEmissionLoss=True, dynamicalFrictionLoss=True, accretion=False, accretionForceLoss=True, haloPhaseSpaceDescription=False):
             self.accuracy = accuracy
             self.verbose = verbose
             self.elliptic = elliptic
             self.gwEmissionLoss = gwEmissionLoss
             self.dynamicalFrictionLoss = dynamicalFrictionLoss
             self.accretion = accretion
+            self.accretionForceLoss = accretionForceLoss and accretion
             self.haloPhaseSpaceDescription = haloPhaseSpaceDescription
 
         def __str__(self):
@@ -394,7 +396,7 @@ class Classic:
         """
         dE_gw_dt = Classic.dE_gw_dt(sp, a, e) if opt.gwEmissionLoss else 0.
         dE_df_dt = Classic.dE_df_dt(sp, a, e, opt) if opt.dynamicalFrictionLoss else 0.
-        dE_acc_dt = Classic.dE_acc_dt(sp, a, e) if opt.accretion else 0.
+        dE_acc_dt = Classic.dE_acc_dt(sp, a, e) if opt.accretionForceLoss else 0.
 
         if opt.verbose > 2:
             print("dE_gw_dt=", dE_gw_dt, "dE_df_dt=", dE_df_dt, "dE_acc_dt=", dE_acc_dt)
@@ -418,7 +420,7 @@ class Classic:
         """
         dL_gw_dt = Classic.dL_gw_dt(sp, a, e) if opt.gwEmissionLoss else 0.
         dL_df_dt = Classic.dL_df_dt(sp, a, e, opt) if opt.dynamicalFrictionLoss else 0.
-        dL_acc_dt = Classic.dL_acc_dt(sp, a, e) if opt.accretion else 0.
+        dL_acc_dt = Classic.dL_acc_dt(sp, a, e) if opt.accretionForceLoss else 0.
 
         if opt.verbose > 2:
             print("dL_gw_dt=", dL_gw_dt, "dL_df_dt=", dL_df_dt, "dL_acc_dt=", dL_acc_dt)
