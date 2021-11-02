@@ -20,7 +20,7 @@ class Classic:
         ln_Lambda (float): The Coulomb logarithm of the dynamical friction description. Set -1 for ln sqrt(m1/m2). Default is 3.
         dmPhaseSpaceFraction (float) : As the dm particles in the halo are not stationary, the relative velocity effects need to be modeled, here according to https://arxiv.org/pdf/2002.12811.pdf
     """
-    ln_Lambda = -1.
+    ln_Lambda = -1
     dmPhaseSpaceFraction = 1.
 
     class EvolutionOptions:
@@ -116,24 +116,6 @@ class Classic:
         return np.sqrt( -(1. - e**2) * sp.m_reduced(a)**3 * sp.m_total(a)**2 / 2. / Classic.E_orbit(sp, a, e))
 
 
-    def dE_orbit_da(sp, a, e=0.):
-        """
-        The function gives the derivative of the orbital energy wrt the semimajor axis a
-           of the binary with central mass m1 with the surrounding halo and the smaller mass m2
-           for a Keplerian orbit with semimajor axis a and eccentricity e
-
-        Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
-
-        Returns:
-            out : float
-                The derivative of the orbital energy wrt to a of the Keplerian orbit
-        """
-        return sp.m2 * sp.mass(a) / 2. / a**2  * ( 1. - sp.dmass_dr(a) * a / sp.mass(a) )
-
-
     def dE_gw_dt(sp, a, e=0.):
         """
         The function gives the energy loss due to radiation of gravitational waves
@@ -170,17 +152,21 @@ class Classic:
         return -32./5. * sp.m_reduced(a)**2 * sp.m_total(a)**(5./2.) / a**(7./2.)  / (1. - e**2)**2 * (1. + 7./8.*e**2)
 
 
-    def F_df(sp, r, v, opt=EvolutionOptions()):
+    def F_df(sp, r, v, opt=EvolutionOptions(), v_max=None):
         """
         The function gives the force of the dynamical friction of an object inside a dark matter halo at radius r (since we assume a spherically symmetric halo)
             and with velocity v
         The ln_Lambda is the Coulomb logarithm, for which different authors use different values. Set to -1 so that Lambda = sqrt(m1/m2)
+        The useHaloPhaseSpaceDescription parameter allows to use not the total dark matter density at r, but uses the halo phase space description
+            such that only particles below a given v_max scatter. If v_max is None, it is taken to be the orbital velocity. This option requires
+            sp.halo to be of type DynamicSS.
 
         Parameters:
             sp (SystemProp) : The object describing the properties of the inspiralling system
             r  (float)      : The radius of the orbiting object
             v  (float)      : The speed of the orbiting object wrt to the dark matter halo
             opt (EvolutionOptions): The options for the evolution of the differential equations
+            v_max (float)   : The maximum speed at which dark matter particles can scatter with the secondary object
 
         Returns:
             out : float
@@ -190,11 +176,11 @@ class Classic:
         if ln_Lambda < 0.:
             ln_Lambda = np.log(sp.m1/sp.m2)/2.
         if opt.haloPhaseSpaceDescription:
-            return 4.*np.pi * sp.m2**2 * sp.halo.density(r, v_max=v) * ln_Lambda / v**2
+            return 4.*np.pi * sp.m2**2 * sp.halo.density(r, v_max=(v_max if not v_max is None else v)) * ln_Lambda / v**2
         return 4.*np.pi * sp.m2**2 * sp.halo.density(r) * Classic.dmPhaseSpaceFraction * ln_Lambda / v**2
 
 
-    def dE_df_dt(sp, a, e=0., opt=EvolutionOptions()):
+    def dE_df_dt(sp, a, e=0., opt=EvolutionOptions(), v_max=None):
         """
         The function gives the energy loss due to dynamical friction of the smaller object with the dark matter halo
            on a Keplerian orbit with semimajor axis a and eccentricity e
@@ -206,6 +192,7 @@ class Classic:
             a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
             e  (float)      : The eccentricity of the Keplerian orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
+            v_max (float)   : The maximum speed at which dark matter particles can scatter with the secondary object
 
         Returns:
             out : float
@@ -213,18 +200,18 @@ class Classic:
         """
         if e == 0.:
             v_s = sp.omega_s(a)*a
-            return - Classic.F_df(sp, a, v_s, opt)*v_s
+            return - Classic.F_df(sp, a, v_s, opt, v_max=v_max)*v_s
         else:
             if  isinstance(a, (collections.Sequence, np.ndarray)):
                 return np.array([Classic.dE_df_dt(sp, a_i, e, opt) for a_i in a])
             def integrand(phi):
                 r = a*(1. - e**2)/(1. + e*np.cos(phi))
                 v_s = np.sqrt(sp.m_total(a) *(2./r - 1./a))
-                return Classic.F_df(sp, r, v_s, opt)*v_s / (1.+e*np.cos(phi))**2
+                return Classic.F_df(sp, r, v_s, opt=opt, v_max=v_max)*v_s / (1.+e*np.cos(phi))**2
             return -(1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
 
-    def dL_df_dt(sp, a, e, opt=EvolutionOptions()):
+    def dL_df_dt(sp, a, e, opt=EvolutionOptions(), v_max=None):
         """
         The function gives the angular momentum loss due to dynamical friction of the smaller object with the dark matter halo
            on a Keplerian orbit with semimajor axis a and eccentricity e
@@ -235,6 +222,7 @@ class Classic:
             a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
             e  (float)      : The eccentricity of the Keplerian orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
+            v_max (float)   : The maximum speed at which dark matter particles can scatter with the secondary object
 
         Returns:
             out : float
@@ -243,7 +231,7 @@ class Classic:
         def integrand(phi):
             r = a*(1. - e**2)/(1. + e*np.cos(phi))
             v_s = np.sqrt(sp.m_total(a) *(2./r - 1./a))
-            return Classic.F_df(sp, r, v_s, opt) / v_s / (1.+e*np.cos(phi))**2
+            return Classic.F_df(sp, r, v_s, opt=opt, v_max=v_max) / v_s / (1.+e*np.cos(phi))**2
         return -(1.-e**2)**(3./2.)/2./np.pi *np.sqrt(sp.m_total(a)* a*(1.-e**2)) *  quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
 
@@ -447,11 +435,11 @@ class Classic:
                 The secular time derivative of the semimajor axis
         """
         dE_dt = Classic.dE_dt(sp, a, e, opt)
-        dE_orbit_dm2 = - sp.mass(a)/2./a
+        #dE_orbit_dm2 = - sp.mass(a)/2./a
+        dE_orbit_dm2 = 0.
         dE_orbit_da = Classic.dE_orbit_da(sp, a, e)
 
-        return  (  ( dE_dt - dE_orbit_dm2 * dm2_dt   )
-                    / dE_orbit_da )
+        return    ( dE_dt + dE_orbit_dm2 * dm2_dt   )  / dE_orbit_da
 
 
     def de_dt(sp, a, e, da_dt, opt=EvolutionOptions(), dm2_dt=0.):
@@ -476,10 +464,9 @@ class Classic:
         if e <= 0. or not opt.elliptic:
             return 0.
 
-        g = 1. / sp.m_total(a)**2 / sp.m_reduced(a)**3
-        dg_dm2 = -2. / sp.mass(a)**3 / sp.m2**3 * (1. + 3./2. * sp.mass(a) / sp.m2)
-        #dg_dm2 = 0.
-        #dg_da = -2. / sp.mass(a)**3 / sp.m2**3 * (1. + 3./2. * sp.m2 / sp.mass(a)) * sp.dmass_dr(a)
+        g =  sp.m_total(a)**2 * sp.m_reduced(a)**3
+        #dg_dm2 = 2. * sp.m_reduced(a)**3 * sp.m_total(a) * (1. + 3./2. * sp.mass(a) / sp.m2)
+        dg_dm2 = 0.
         dg_da = 0.
 
         dE_dt = Classic.dE_dt(sp, a, e, opt)
@@ -487,11 +474,12 @@ class Classic:
         dL_dt = Classic.dL_dt(sp, a, e, opt)
         L = Classic.L_orbit(sp, a, e)
 
-        #print("dE_dt/E=", dE_dt/E, "2dL_dt/L=", 2.*dL_dt/L, "diff=", dE_dt/E + 2.*dL_dt/L, "dg_dt/g=", (dg_dm2*dm2_dt + dg_da*da_dt)/g, )
+        if opt.verbose > 2:
+            print("dE_dt/E=", dE_dt/E, "2dL_dt/L=", 2.*dL_dt/L, "diff=", dE_dt/E + 2.*dL_dt/L, "dg_dt/g=", (dg_dm2*dm2_dt + dg_da*da_dt)/g, )
 
         return - (1.-e**2)/2./e *(  dE_dt/E
                                     + 2. * dL_dt/L
-                                    + (dg_dm2 * dm2_dt + dg_da * da_dt)/g
+                                    - (dg_dm2 * dm2_dt + dg_da * da_dt)/g
                                     )
 
 
@@ -560,7 +548,7 @@ class Classic:
         if a_fin == 0.:
             a_fin = sp.r_isco()     # Stop evolution at r_isco
 
-        a_scale = a_fin
+        a_scale = a_0
         t_scale = t_fin
         if opt.accretion:
             m_scale = sp.m2
