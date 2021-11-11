@@ -3,6 +3,7 @@ from scipy.interpolate import UnivariateSpline, interp1d
 from scipy.integrate import quad, solve_ivp
 import imripy.merger_system as ms
 from scipy.special import jv
+import collections
 
 
 def h_2(sp, ev, dbg=False, acc=1e-13):
@@ -168,22 +169,26 @@ def h(sp, ev, t_grid, phi_0=0., acc=1e-13):
             The amplitude of the cross polarization waveform at the corresponding time steps of t_grid
     """
     a_int = interp1d(ev.t, ev.a, kind='cubic', bounds_error=True)
-    e_int = interp1d(ev.t, ev.e, kind='cubic', bounds_error=True)
+    if  isinstance(ev.e, (collections.Sequence, np.ndarray)):
+        e_int = interp1d(ev.t, ev.e, kind='cubic', bounds_error=True)
+    else:
+        e_int = interp1d(ev.t, [0.]*len(ev.t), bounds_error=True)
 
     def phi_dot(t, phi):  # The orbital phase evolution according to Maggiore (2007)
         return np.sqrt(sp.m_total()/a_int(t)**3) * (1. - e_int(t)**2)**(-3./2.) * (1. + e_int(t)*np.cos(phi))**2
 
     sol = solve_ivp(phi_dot, [t_grid[0], t_grid[-1]], [phi_0], t_eval=t_grid, rtol=acc, atol=acc)  # calculate the orbital phase at the given time steps t_grid
     phi = sol.y[0]
+    e = e_int(t_grid)
 
-    h_plus = - ( (2. * np.cos(2.*phi - 2.*sp.pericenter_angle) + 5.*e_int(t_grid)/2. * np.cos(phi - 2.*sp.pericenter_angle)
-                    + e_int(t_grid)/2. * np.cos(3.*phi - 2.*sp.pericenter_angle) + e_int(t_grid)**2 * np.cos(2.*sp.pericenter_angle) ) * (1. + np.cos(sp.inclination_angle)**2 )
-            + (e_int(t_grid) * np.cos(phi) + e_int(t_grid)**2 ) * np.sin(sp.inclination_angle)**2 )
-    h_plus *= sp.m_reduced() / (a_int(t_grid)*(1. - e_int(t_grid)**2)) / sp.D
+    h_plus = - ( (2. * np.cos(2.*phi - 2.*sp.pericenter_angle) + 5.*e/2. * np.cos(phi - 2.*sp.pericenter_angle)
+                    + e/2. * np.cos(3.*phi - 2.*sp.pericenter_angle) + e**2 * np.cos(2.*sp.pericenter_angle) ) * (1. + np.cos(sp.inclination_angle)**2 )
+                + (e * np.cos(phi) + e**2 ) * np.sin(sp.inclination_angle)**2 )
+    h_plus *= sp.m_reduced()*sp.m_total() / (a_int(t_grid)*(1. - e**2)) / sp.D
 
-    h_cross = - (4. * np.sin(2.*phi - 2.*sp.pericenter_angle) + 5.*e_int(t_grid) * np.sin(phi - 2.*sp.pericenter_angle)
-                        + e_int(t_grid) * np.sin(3.*phi - 2.*sp.pericenter_angle) - 2.*e_int(t_grid)**2 * np.sin(2.*sp.pericenter_angle)) * np.cos(sp.inclination_angle)
-    h_cross *= sp.m_reduced() / (a_int(t_grid)*(1. - e_int(t_grid)**2)) / sp.D
+    h_cross = - (4. * np.sin(2.*phi - 2.*sp.pericenter_angle) + 5.*e * np.sin(phi - 2.*sp.pericenter_angle)
+                        + e * np.sin(3.*phi - 2.*sp.pericenter_angle) - 2.*e**2 * np.sin(2.*sp.pericenter_angle)) * np.cos(sp.inclination_angle)
+    h_cross *= sp.m_reduced()*sp.m_total() / (a_int(t_grid)*(1. - e**2)) / sp.D
 
     return h_plus, h_cross
 
