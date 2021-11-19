@@ -897,7 +897,7 @@ class HaloFeedback:
         """
         dE_gw_dt = Classic.dE_gw_dt(sp, R) if self.options.gwEmissionLoss else 0.
         opt = Classic.EvolutionOptions(haloPhaseSpaceDescription=True)
-        dE_df_dt = Classic.dE_df_dt(sp, R, opt=opt, v_max=v_cut) if self.options.dynamicalFrictionLoss else 0.
+        dE_df_dt = Classic.dE_force_dt(sp, Classic.F_df, R, e=0., opt=opt, v_max=v_cut)
         return (dE_gw_dt + dE_df_dt)/ Classic.dE_orbit_da(sp, R)
 
     class EvolutionResults:
