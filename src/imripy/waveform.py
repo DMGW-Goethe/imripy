@@ -74,6 +74,7 @@ def h_n(n, sp, ev, dbg=False, acc=1e-13):
     """
     This function calculates the gravitational waveform h^n_+ for eccentric inspirals according to eq (101) in https://arxiv.org/pdf/2107.00741.pdf
     Parameters:
+        n (int) : The harmonic of interest, must be a positive integer
         sp (merger_system.SystemProp)   : The object describing the properties of the inspiralling system
         ev (inspiral.Classic.Evolution) : The evolution object that results from the inspiral modeling
         dbg (bool)      : A parameter returning intermediate variables
@@ -151,7 +152,6 @@ def h_n(n, sp, ev, dbg=False, acc=1e-13):
     return f_gw, h_n_plus, h_n_cross, Psi_n
 
 
-
 def h(sp, ev, t_grid, phi_0=0., acc=1e-13):
     """
     This function calculates the time domain gravitational waveform h_+,x(t) for eccentric inspirals according to eq (96) in https://arxiv.org/pdf/2107.00741.pdf
@@ -191,4 +191,28 @@ def h(sp, ev, t_grid, phi_0=0., acc=1e-13):
     h_cross *= sp.m_reduced()*sp.m_total() / (a_int(t_grid)*(1. - e**2)) / sp.D
 
     return h_plus, h_cross
+
+
+def N_cycles_n(n, sp, ev, acc=1e-13):
+    """
+    Calculates the amount of cycles of a given harmonic n left to observe for a given frequency as given by eq. (5.3) of https://arxiv.org/pdf/2002.12811.pdf with t_f = ev.t[-1]
+
+    Parameters:
+        n (int) : The harmonic of interest, must be a positive integer
+        sp (merger_system.SystemProp)   : The object describing the properties of the inspiralling system
+        ev (inspiral.Classic.Evolution) : The evolution object that results from the inspiral modeling
+        dbg (bool)      : A parameter returning intermediate variables
+        acc    (float)  : An accuracy parameter that is passed to the integration function
+
+    Returns:
+        f_gw : np.ndarray
+            The frequencies of the harmonic
+        N_cycles : np.ndarray
+            The number of cycles left to observe for that harmonic
+    """
+    F = np.sqrt(sp.m_total(ev.a)/ev.a**3) / 2./np.pi
+    F_interp = interp1d(ev.t, F, kind='cubic', bounds_error=False, fill_value=(0.,0.))
+    N = solve_ivp(lambda t,y: - n * F_interp(t), [ev.t[0], ev.t[-1]], [0.], t_eval= ev.t, rtol=acc, atol=acc).y[0]
+    N -= N[-1]
+    return n*F, N
 
