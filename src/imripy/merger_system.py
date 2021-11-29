@@ -42,6 +42,8 @@ class SystemProp:
                 The inclination angle (usually denoted iota) at which the system is oriented, see https://arxiv.org/pdf/1807.07163.pdf
             pericenter_angle : float
                 The angle at which the pericenter is located wrt the observer, denoted as beta in https://arxiv.org/pdf/1807.07163.pdf
+            includeHaloInTotalMass : bool
+                Whether to include the dark matter halo mass in the calculation of the enclosed mass
         """
         self.m1 = m1
         self.m2 = m2
@@ -66,6 +68,16 @@ class SystemProp:
                 The radius of the ISCO
         """
         return 6.*self.m1
+
+    def r_schwarzschild(self):
+        """
+        The function returns the Schwarzschild radius of a Schwarzschild black hole with mass m1
+
+        Returns:
+            out : float
+                The Schwarzschild radius
+        """
+        return 2.*self.m1
 
     def m_reduced(self, r=0.):
         """
@@ -146,7 +158,8 @@ class SystemProp:
 
     def mass(self, r):
         """
-        The function returns the total mass enclosed in a sphere of radius r. This includes the central mass and the mass of the dark matter halo
+        The function returns the total mass enclosed in a sphere of radius r.
+            This includes the central mass and the mass of the dark matter halo if includeHaloInTotalMass=True
 
         Parameters:
             r : float or array_like
@@ -160,7 +173,8 @@ class SystemProp:
 
     def dmass_dr(self, r):
         """
-        The function returns the derivative of the total mass enclosed in a sphere of radius r. This derivative stems from the mass of the dark matter halo
+        The function returns the derivative of the total mass enclosed in a sphere of radius r.
+            This derivative stems from the mass of the dark matter halo and is only nonzero if includeHaloInTotalMass=True
 
         Parameters:
             r : float or array_like
