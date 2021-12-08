@@ -50,7 +50,8 @@ class Classic:
 
         """
         def __init__(self, accuracy=1e-8, verbose=1, elliptic=True, gwEmissionLoss=True, dynamicalFrictionLoss=True, accretion=False,
-                                    accretionForceLoss=True, accretionRecoilLoss=True, haloPhaseSpaceDescription=False):
+                                    accretionForceLoss=True, accretionRecoilLoss=True, accretionModel='',
+                                    haloPhaseSpaceDescription=False):
             self.accuracy = accuracy
             self.verbose = verbose
             self.elliptic = elliptic
@@ -59,6 +60,7 @@ class Classic:
             self.accretion = accretion
             self.accretionForceLoss = accretionForceLoss and accretion
             self.accretionRecoilLoss = accretionRecoilLoss and accretion
+            self.accretionModel = accretionModel if accretionModel in ['Classic', 'Bondi-Hoyle'] else ''
             self.haloPhaseSpaceDescription = haloPhaseSpaceDescription
 
         def __str__(self):
@@ -189,21 +191,28 @@ class Classic:
         return 4.*np.pi * sp.m2**2 * sp.halo.density(r) * Classic.dmPhaseSpaceFraction * ln_Lambda / v**2
 
 
-    def BH_cross_section(sp, v):
+    def BH_cross_section(sp, v, opt=EvolutionOptions(), **kwargs):
         """
         The function gives the cross section of a small black hole (m2) moving through a halo of particles
-            according to https://arxiv.org/pdf/1711.09706.pdf
+        Choose model through opt.accretionModel parameter
+            'Classic' (default): according to https://arxiv.org/pdf/1711.09706.pdf
+            'Bondi-Hoyle' : according to https://arxiv.org/pdf/2111.13514.pdf
 
         Parameters:
             sp (SystemProp) : The object describing the properties of the inspiralling system, the small black hole is taken to be sp.m2
             v  (float)      : The relative velocity of the black hole to the halo
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+            *kwargs            : Optional parameters that can be passed to BH_cross_section
 
         Returns:
             out : float
                 The black hole cross section
         """
-        #return 16. * np.pi * sp.m2**2 / v**2  * (1. + v**2)
+        if opt.accretionModel == 'Bondi-Hoyle':
+            return 4.*np.pi * sp.m2**2 / v**4
+
         return (np.pi * sp.m2**2. / v**2.) * (8. * (1. - v**2.))**3 / (4. * (1. - 4. * v**2. + (1. + 8. * v**2.)**(1./2.)) * (3. - (1. + 8. * v**2.)**(1./2.))**2.)
+        #return 16. * np.pi * sp.m2**2 / v**2  * (1. + v**2)
 
 
     def dm2_dt(sp, r, v, opt=EvolutionOptions(), **kwargs):
@@ -216,12 +225,14 @@ class Classic:
             sp (SystemProp) : The object describing the properties of the inspiralling system
             r  (float)      : The radial position of the black hole in the halo
             v  (float)      : The relative velocity
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+            *kwargs            : Optional parameters that can be passed to dm2_dt
 
         Returns:
             out : float
                 The mass gain due to accretion
         """
-        return sp.halo.density(r) * v * Classic.BH_cross_section(sp, v)
+        return sp.halo.density(r) * v * Classic.BH_cross_section(sp, v, opt, **kwargs)
 
 
     def dm2_dt_avg(sp, a, e=0., opt=EvolutionOptions(), **kwargs):
@@ -235,6 +246,8 @@ class Classic:
             sp (SystemProp) : The object describing the properties of the inspiralling system
             a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
             e  (float)      : The eccentricity of the Keplerian orbit
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+            *kwargs            : Optional parameters that can be passed to dm2_dt_avg
 
         Returns:
             out : float
@@ -262,6 +275,8 @@ class Classic:
             sp (SystemProp) : The object describing the properties of the inspiralling system
             r  (float)      : The radius of the orbiting object
             v  (float)      : The speed of the orbiting object wrt to the dark matter halo
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+            *kwargs            : Optional parameters that can be passed to F
 
         Returns:
             out : float
@@ -279,6 +294,8 @@ class Classic:
             sp (SystemProp) : The object describing the properties of the inspiralling system
             r  (float)      : The radius of the orbiting object
             v  (float)      : The speed of the orbiting object wrt to the dark matter halo
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+            *kwargs            : Optional parameters that can be passed to F
 
         Returns:
             out : float
