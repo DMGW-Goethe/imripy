@@ -534,8 +534,7 @@ class Classic:
 
         a_scale = a_0
         t_scale = t_fin
-        if opt.accretion:
-            m_scale = sp.m2
+        m_scale = sp.m2 if opt.accretion else 1.
 
         t_step_max = np.inf
         if opt.verbose > 0:
@@ -543,44 +542,34 @@ class Classic:
 
         # Define the evolution function
         def dy_dt(t, y, *args):
-            sp = args[0]
-            opt = args[1]
+            sp = args[0]; opt = args[1]
             t = t*t_scale
+
             # Unpack array
-            i = 0
-            a = y[i]*a_scale; i += 1
-            e = y[i] if opt.elliptic else 0.; i = i + 1 if opt.elliptic else i
-            sp.m2 = y[i] * m_scale if opt.accretion else sp.m2; i = i + 1 if opt.accretion else i
+            a, e, m2 = y
+            a *= a_scale; sp.m2 = m2 * m_scale if opt.accretion else sp.m2
 
             if opt.verbose > 1:
                 tic = time.perf_counter()
 
-            dm2_dt = Classic.dm2_dt_avg(sp, a, e) if opt.accretion else 0.
             da_dt = Classic.da_dt(sp, a, e, opt)
             de_dt = Classic.de_dt(sp, a, e, da_dt, opt) if opt.elliptic else 0.
+            dm2_dt = Classic.dm2_dt_avg(sp, a, e) if opt.accretion else 0.
 
             if opt.verbose > 1:
                 toc = time.perf_counter()
                 print("t=", t, "a=", a, "da/dt=", da_dt, "e=", e, "de/dt=", de_dt, "m2=", sp.m2, "dm2_dt=", dm2_dt,
                         " elapsed real time: ", toc-tic)
 
-            dy = np.array([da_dt/a_scale])
-            if opt.elliptic:
-                dy = np.append(dy, de_dt)
-            if opt.accretion:
-                dy = np.append(dy, dm2_dt/m_scale)
+            dy = np.array([da_dt/a_scale, de_dt, dm2_dt/m_scale])
             return dy * t_scale
 
         # Termination condition
         fin_reached = lambda t,y, *args: y[0] - a_fin/a_scale
         fin_reached.terminal = True
 
-        # Collect initial conditions
-        y_0 = np.array([a_0 / a_scale])
-        if opt.elliptic:
-            y_0 = np.append(y_0, e_0)
-        if opt.accretion:
-            y_0 = np.append(y_0, sp.m2/m_scale)
+        # Initial conditions
+        y_0 = np.array([a_0 / a_scale, e_0, sp.m2/m_scale])
 
         # Evolve
         tic = time.perf_counter()
@@ -590,12 +579,10 @@ class Classic:
 
         # Collect results
         t = Int.t*t_scale
-        i = 0
-        a = Int.y[i]*a_scale; i += 1
+        a = Int.y[0]*a_scale;
         ev = Classic.EvolutionResults(sp, opt, t, a, msg=Int.message)
-        ev.e = np.clip(Int.y[i], 1e-50, None) if opt.elliptic else 0. # Make sure that e > 0 so that the equations used in waveform.py do not fail
-        i = i + 1 if opt.elliptic else i
-        ev.m2 = Int.y[i]*m_scale if opt.accretion else sp.m2; i = i + 1 if opt.accretion else i
+        ev.e = Int.y[1] if opt.elliptic else 0.
+        ev.m2 = Int.y[2]*m_scale if opt.accretion else sp.m2;
 
         if opt.verbose > 0:
             print(Int.message)

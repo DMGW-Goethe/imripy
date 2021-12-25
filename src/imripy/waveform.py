@@ -128,7 +128,8 @@ def h_n(n, sp, ev, dbg=False, acc=1e-13):
     t_coal =  5./256. * ev.a[-1]**4/sp.m_total()**2 /sp.m_reduced()    # The circular case
     def g(e):
         return e**(12./19.)/(1. - e**2) * (1. + 121./304. * e**2)**(870./2299.)
-    t_coal = t_coal * 48./19. / g(ev.e[-1])**4 * quad(lambda e: g(e)**4 *(1-e**2)**(5./2.) /e/(1. + 121./304. * e**2), 0., ev.e[-1], limit=100)[0]   # The eccentric inspiral time according to Maggiore (2007)
+    e = np.clip(ev.e, 1e-50, None) # Make sure to not divide by 0
+    t_coal = t_coal * 48./19. / g(e[-1])**4 * quad(lambda e: g(e)**4 *(1-e**2)**(5./2.) /e/(1. + 121./304. * e**2), 0., e[-1], limit=100)[0]   # The eccentric inspiral time according to Maggiore (2007)
     t_coal = ev.t[-1] + t_coal
 
     # Now we can calculate the phase of the stationary phase approximation
@@ -140,8 +141,8 @@ def h_n(n, sp, ev, dbg=False, acc=1e-13):
     A_n = np.where(F_dot == 0., 0., A_n)
 
     # the actual waveform
-    h_n_plus  = A_n * ( C_n_plus(n, sp, ev.e)   +  1.j  * S_n_plus(n, sp, ev.e))
-    h_n_cross = A_n * ( C_n_cross(n, sp, ev.e)  +  1.j  * S_n_cross(n, sp, ev.e))
+    h_n_plus  = A_n * ( C_n_plus(n, sp, e)   +  1.j  * S_n_plus(n, sp, e))
+    h_n_cross = A_n * ( C_n_cross(n, sp, e)  +  1.j  * S_n_cross(n, sp, e))
 
     # the corresponding observed frequencies
     f_gw = n*F / (1.+sp.z())
