@@ -60,7 +60,7 @@ class Classic:
             self.accretion = accretion
             self.accretionForceLoss = accretionForceLoss and accretion
             self.accretionRecoilLoss = accretionRecoilLoss and accretion
-            self.accretionModel = accretionModel if accretionModel in ['Classic', 'Bondi-Hoyle'] else ''
+            self.accretionModel = accretionModel if accretionModel in ['Collisionless', 'Bondi-Hoyle'] else ''
             self.haloPhaseSpaceDescription = haloPhaseSpaceDescription
             self.additionalParameters = kwargs
 
@@ -203,8 +203,8 @@ class Classic:
         """
         The function gives the cross section of a small black hole (m2) moving through a halo of particles
         Choose model through opt.accretionModel parameter
-            'Classic' (default): according to https://arxiv.org/pdf/1711.09706.pdf
-            'Bondi-Hoyle' : according to https://arxiv.org/pdf/2111.13514.pdf
+            'Collisionless' (default): according to https://arxiv.org/pdf/1711.09706.pdf
+            'Bondi-Hoyle' : according to https://arxiv.org/pdf/1302.2646.pdf
 
         Parameters:
             sp (SystemProp) : The object describing the properties of the inspiralling system, the small black hole is taken to be sp.m2
@@ -216,7 +216,8 @@ class Classic:
                 The black hole cross section
         """
         if opt.accretionModel == 'Bondi-Hoyle':
-            return 4.*np.pi * sp.m2**2 / v**4
+            dm_soundspeed2 = opt.additionalParameters['dm_soundspeed2'] if 'dm_soundspeed2' in opt.additionalParameters else 0.
+            return 4.*np.pi * sp.m2**2 / (v**2 +  dm_soundspeed2)**(3./2.)  / v
 
         return (np.pi * sp.m2**2. / v**2.) * (8. * (1. - v**2.))**3 / (4. * (1. - 4. * v**2. + (1. + 8. * v**2.)**(1./2.)) * (3. - (1. + 8. * v**2.)**(1./2.))**2.)
         #return 16. * np.pi * sp.m2**2 / v**2  * (1. + v**2)
