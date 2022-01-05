@@ -906,8 +906,8 @@ class HaloFeedback:
                 The secular time derivative of the semimajor axis
         """
         dE_gw_dt = Classic.dE_gw_dt(sp, R) if self.options.gwEmissionLoss else 0.
-        opt = Classic.EvolutionOptions(haloPhaseSpaceDescription=True)
-        dE_df_dt = Classic.dE_force_dt(sp, Classic.F_df, R, e=0., opt=opt, v_max=v_cut)
+        opt = Classic.EvolutionOptions(haloPhaseSpaceDescription=True, v_max=v_cut)
+        dE_df_dt = Classic.dE_force_dt(sp, Classic.F_df, R, e=0., opt=opt)
         return (dE_gw_dt + dE_df_dt)/ Classic.dE_orbit_da(sp, R)
 
     class EvolutionResults:
