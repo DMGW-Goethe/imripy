@@ -169,11 +169,11 @@ def h(sp, ev, t_grid, phi_0=0., acc=1e-13):
         h_cross : np.ndarray
             The amplitude of the cross polarization waveform at the corresponding time steps of t_grid
     """
-    a_int = interp1d(ev.t, ev.a, kind='cubic', bounds_error=True)
+    a_int = interp1d(ev.t, ev.a, kind='cubic', bounds_error=False, fill_value=(0.,0.))
     if  isinstance(ev.e, (collections.Sequence, np.ndarray)):
-        e_int = interp1d(ev.t, ev.e, kind='cubic', bounds_error=True)
+        e_int = interp1d(ev.t, ev.e, kind='cubic', bounds_error=False, fill_value=(0.,0.))
     else:
-        e_int = interp1d(ev.t, [0.]*len(ev.t), bounds_error=True)
+        e_int = interp1d(ev.t, np.zeros(np.shape(ev.t)), bounds_error=False, fill_value=(0.,0.))
 
     def phi_dot(t, phi):  # The orbital phase evolution according to Maggiore (2007)
         return np.sqrt(sp.m_total()/a_int(t)**3) * (1. - e_int(t)**2)**(-3./2.) * (1. + e_int(t)*np.cos(phi))**2
