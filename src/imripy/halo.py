@@ -440,7 +440,42 @@ class SpikedNFW(NFW, Spike):
                 The string representation
         """
         return "SpikedNFW"
+    
+class Simulation(MatterHalo):
+    
+    """
+    A class that takes in a table of r and rho values and interpolates a density function describing the halo. 
+    """
 
+    def __init__(self, r_arr, rho_arr):
+        """
+        The constructor for the Simulation class
+
+        Parameters:
+            rho_arr : array-like
+                The density array from the simulation
+            r_arr : array-like
+                radii coresponding to rho array 
+        """
+        MatterHalo.__init__(self)
+        self.r = r_arr
+        self.rho = rho_arr
+        
+    def density(self, r):
+        rho_interp = interp1d(self.r, self.rho, kind='linear', fill_value = "extrapolate") 
+        
+        return np.where(r > self.r_min, rho_interp(r), 0.)
+        
+    def __str__(self):
+        """
+        Gives the string representation of the object
+
+        Returns:
+            out : string
+                The string representation
+        """
+        return "Simulation"
+    
 class Hernquist(MatterHalo):
     """
     A class describing a Hernquist halo profile
