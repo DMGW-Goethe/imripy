@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.integrate import solve_ivp, quad, simpson
+from scipy.integrate import solve_ivp, quad #, simpson
 from scipy.interpolate import griddata, CloughTocher2DInterpolator
 from scipy.special import ellipeinc, ellipe, ellipkinc
 from scipy.spatial import Delaunay
