@@ -25,7 +25,7 @@ class SystemProp:
     """
 
 
-    def __init__(self, m1, m2, halo, D=1., inclination_angle = 0., pericenter_angle=0., includeHaloInTotalMass=False):
+    def __init__(self, m1, m2, halo, D=1., inclination_angle = 0., pericenter_angle=0., baryonicHalo=None, includeHaloInTotalMass=False):
         """
         The constructor for the SystemProp class
 
@@ -52,6 +52,10 @@ class SystemProp:
 
         self.halo = halo
         self.halo.r_min = self.r_isco()
+
+        self.baryonicHalo = baryonicHalo
+        if not self.baryonicHalo is None:
+            self.baryonicHalo.r_min = self.r_isco()
 
         self.inclination_angle = inclination_angle
         self.pericenter_angle = pericenter_angle

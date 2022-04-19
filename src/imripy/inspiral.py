@@ -44,14 +44,18 @@ class Classic:
                 Whether to include the energy loss due to the accretion mass change
             accretionRecoilLoss : bool
                 Whether to include the energy loss due to the accretion recoil
+            baryonicHaloEffects : bool
+                Whether to include the effects of a baryonic halo. This requires sp.baryonicHalo to be not None
+            baryonicEvolutionOptions : EvolutionOptions
+                The evolution Options to describe the interaction with the baryon halo. Be careful to avoid nesting!
             haloPhaseSpaceDescription : bool
                 Whether to use the phase space description of the halo to calculate relative velocities
                 This requires the SystemProp.halo to be of type DynamicSS
 
         """
         def __init__(self, accuracy=1e-8, verbose=1, elliptic=True, gwEmissionLoss=True, dynamicalFrictionLoss=True, accretion=False,
-                                    accretionForceLoss=True, accretionRecoilLoss=True, accretionModel='',
-                                    haloPhaseSpaceDescription=False, **kwargs):
+                                    accretionForceLoss=True, accretionRecoilLoss=False, accretionModel='',
+                                    baryonicHaloEffects=False, baryonicEvolutionOptions=None, haloPhaseSpaceDescription=False, **kwargs):
             self.accuracy = accuracy
             self.verbose = verbose
             self.elliptic = elliptic
@@ -61,8 +65,17 @@ class Classic:
             self.accretionForceLoss = accretionForceLoss and accretion
             self.accretionRecoilLoss = accretionRecoilLoss and accretion
             self.accretionModel = accretionModel if accretionModel in ['Collisionless', 'Bondi-Hoyle'] else ''
+            self.baryonicHaloEffects = baryonicHaloEffects
+            self.baryonicEvolutionOptions = baryonicEvolutionOptions
             self.haloPhaseSpaceDescription = haloPhaseSpaceDescription
             self.additionalParameters = kwargs
+
+            if not self.baryonicEvolutionOptions is None:
+                self.baryonicEvolutionOptions.baryonicHaloEffects = False
+                self.baryonicEvolutionOptions.baryonicEvolutionOptions = None
+                self.baryonicEvolutionOptions.gwEmissionLoss = False
+                self.accretion = self.accretion or self.baryonicEvolutionOptions.accretion
+
 
         def __str__(self):
             s = "Options: "
@@ -75,6 +88,8 @@ class Classic:
                 s += f" (accretionForceLoss = {self.accretionForceLoss}, accretionRecoilLoss = {self.accretionRecoilLoss})"
             s += f", haloPhaseSpaceDescription = {self.haloPhaseSpaceDescription}"
             s += f", accuracy = {self.accuracy:.1e}"
+            if self.baryonicHaloEffects:
+                s += f", baryonicHaloEffects = {self.baryonicHaloEffects}"
             for key, value in self.additionalParameters.items():
                 s += f", {key}={value}"
             return s
@@ -261,7 +276,7 @@ class Classic:
         """
         if e == 0.:
             v_s = sp.omega_s(a)*a
-            return Classic.dm2_dt(sp, a, v_s, opt)
+            dm2_dt = Classic.dm2_dt(sp, a, v_s, opt)
         else:
             if  isinstance(a, (collections.Sequence, np.ndarray)):
                 return np.array([Classic.dm2_dt(sp, a_i, e, opt) for a_i in a])
@@ -269,7 +284,18 @@ class Classic:
                 r = a*(1. - e**2)/(1. + e*np.cos(phi))
                 v_s = np.sqrt(sp.m_total(a) *(2./r - 1./a))
                 return Classic.dm2_dt(sp, r, v_s) / (1.+e*np.cos(phi))**2
-            return (1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
+            dm2_dt = (1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
+
+        dm2_baryons_dt = 0.
+        if opt.baryonicHaloEffects and opt.baryonicEvolutionOptions.accretion:
+            dmHalo = sp.halo
+            sp.halo = sp.baryonicHalo
+            dm2_baryons_dt = Classic.dm2_dt_avg(sp, a, e, opt.baryonicEvolutionOptions)
+            sp.halo = dmHalo
+
+        if(opt.verbose > 2):
+            print(f"dm2_dt={dm2_dt}, dm2_baryons_dt = {dm2_baryons_dt}")
+        return dm2_dt + dm2_baryons_dt
 
 
     def F_acc(sp, r, v, opt=EvolutionOptions()):
@@ -382,9 +408,16 @@ class Classic:
         dE_acc_dt = Classic.dE_force_dt(sp, Classic.F_acc, a, e, opt) if opt.accretionForceLoss else 0.
         dE_acc_dt += Classic.dE_force_dt(sp, Classic.F_acc_recoil, a, e, opt) if opt.accretionRecoilLoss else 0.
 
+        dE_baryons_dt = 0.
+        if opt.baryonicHaloEffects:
+            dmHalo = sp.halo
+            sp.halo = sp.baryonicHalo
+            dE_baryons_dt = Classic.dE_dt(sp, a, e, opt.baryonicEvolutionOptions)
+            sp.halo = dmHalo
+
         if opt.verbose > 2:
-            print("dE_gw_dt=", dE_gw_dt, "dE_df_dt=", dE_df_dt, "dE_acc_dt=", dE_acc_dt)
-        return ( dE_gw_dt + dE_df_dt + dE_acc_dt )
+            print(f"dE_gw_dt= {dE_gw_dt}, dE_df_dt= {dE_df_dt}, dE_acc_dt= {dE_acc_dt}, dE_baryons_dt = {dE_baryons_dt}")
+        return ( dE_gw_dt + dE_df_dt + dE_acc_dt + dE_baryons_dt)
 
 
     def dL_dt(sp, a, e, opt=EvolutionOptions()):
@@ -407,9 +440,16 @@ class Classic:
         dL_acc_dt = Classic.dL_force_dt(sp, Classic.F_acc, a, e, opt) if opt.accretionForceLoss else 0.
         dL_acc_dt += Classic.dL_force_dt(sp, Classic.F_acc_recoil, a, e, opt) if opt.accretionRecoilLoss else 0.
 
+        dL_baryons_dt = 0.
+        if opt.baryonicHaloEffects:
+            dmHalo = sp.halo
+            sp.halo = sp.baryonicHalo
+            dL_baryons = Classic.dL_dt(sp, a, e, opt.baryonicEvolutionOptions)
+            sp.halo = dmHalo
+
         if opt.verbose > 2:
-            print("dL_gw_dt=", dL_gw_dt, "dL_df_dt=", dL_df_dt, "dL_acc_dt=", dL_acc_dt)
-        return  (dL_gw_dt + dL_df_dt + dL_acc_dt)
+            print(f"dL_gw_dt= {dL_gw_dt}, dL_df_dt= {dL_df_dt}, dL_acc_dt= {dL_acc_dt}, dL_baryons_dt = {dL_baryons_dt}")
+        return  (dL_gw_dt + dL_df_dt + dL_acc_dt + dL_baryons_dt)
 
 
     def da_dt(sp, a, e=0., opt=EvolutionOptions(), return_dE_dt=False):

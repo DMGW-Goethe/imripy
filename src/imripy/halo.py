@@ -35,7 +35,7 @@ class MatterHalo:
         """
         pass
 
-    def mass(self, r):
+    def mass(self, r, **kwargs):
         """
         The mass that is contained in the halo in the spherical shell of size r.
         This function numerically integrates over the density function, so that it can be used
@@ -49,7 +49,7 @@ class MatterHalo:
             out : float or np.ndarray (depending on r)
                 The mass inside the spherical shell of size r
         """
-        integrand = lambda r, m: self.density(r)*r**2
+        integrand = lambda r, m: self.density(r, **kwargs)*r**2
         if isinstance(r, (collections.Sequence, np.ndarray)):
             return 4.*np.pi*odeint(integrand, quad(integrand, 0., r[0], args=(0.))[0], r, tfirst=True, rtol=1e-10, atol=1e-10)[:,0]
         else:
@@ -65,6 +65,63 @@ class MatterHalo:
                 The string representation
         """
         return "MatterHalo"
+
+
+class MiyamotoNagaiDisc(MatterHalo):
+    """
+    A class describing an axisymmetric, static, baryonic disc
+
+    Attributes:
+        r_min (float): A minimum radius below which the density is always 0, this is initialized to 0
+        M_d   (float): The disc mass paramter
+        R_d   (float): The disc scale length
+        z_d   (float): The disc scale height
+    """
+
+    def __init__(self, M_d, R_d, z_d):
+        """
+        The constructor for the MiyamotoNagaiDisc class
+
+        Parameters:
+            M_d : float
+                The disc mass paramter
+            R_d : float
+                The disc scale length
+            z_d : float
+                The disc scale height
+        """
+        self.M_d = M_d
+        self.R_d = R_d
+        self.z_d = z_d
+
+    def density(self, r, z=0.):
+        """
+        The density function of the disc, see eq (2.69) of Binney&Tremain(2007)
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the density
+            z : float or array_like (optional)
+                The height at which to evaluate the density (in cylindrical coordinates)
+
+        Returns:
+            out : float or array_like (depending on r)
+                The density at the radius r, height z
+        """
+        chi = np.sqrt(z**2 + self.z_d**2)
+        return ( self.M_d * self.z_d**2 / 4. / np.pi
+                    * (self.R_d* r**2 + (self.R_d + 3.*chi)*(self.R_d + chi)**2 )
+                    / ( r**2 + (self.R_d + chi)**2 )**(5./2)  / chi**3 )
+
+    def __str__(self):
+        """
+        Gives the string representation of the object
+
+        Returns:
+            out : string
+                The string representation
+        """
+        return f"MiyamotoNagaiDisc: M_d={M_d}, R_d={R_d}, z_d={z_d}"
 
 class ConstHalo(MatterHalo):
     """
