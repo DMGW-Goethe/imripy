@@ -121,7 +121,7 @@ class MiyamotoNagaiDisc(MatterHalo):
             out : string
                 The string representation
         """
-        return f"MiyamotoNagaiDisc: M_d={M_d}, R_d={R_d}, z_d={z_d}"
+        return f"MiyamotoNagaiDisc: M_d={self.M_d}, R_d={self.R_d}, z_d={self.z_d}"
 
 class ConstHalo(MatterHalo):
     """

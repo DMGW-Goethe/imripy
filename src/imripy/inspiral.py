@@ -74,7 +74,6 @@ class Classic:
                 self.baryonicEvolutionOptions.baryonicHaloEffects = False
                 self.baryonicEvolutionOptions.baryonicEvolutionOptions = None
                 self.baryonicEvolutionOptions.gwEmissionLoss = False
-                self.accretion = self.accretion or self.baryonicEvolutionOptions.accretion
 
 
         def __str__(self):
@@ -274,17 +273,19 @@ class Classic:
             out : float
                 The mass gain due to accretion on an orbit
         """
-        if e == 0.:
-            v_s = sp.omega_s(a)*a
-            dm2_dt = Classic.dm2_dt(sp, a, v_s, opt)
-        else:
-            if  isinstance(a, (collections.Sequence, np.ndarray)):
-                return np.array([Classic.dm2_dt(sp, a_i, e, opt) for a_i in a])
-            def integrand(phi):
-                r = a*(1. - e**2)/(1. + e*np.cos(phi))
-                v_s = np.sqrt(sp.m_total(a) *(2./r - 1./a))
-                return Classic.dm2_dt(sp, r, v_s) / (1.+e*np.cos(phi))**2
-            dm2_dt = (1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
+        dm2_dt = 0.
+        if opt.accretion:
+            if e == 0.:
+                v_s = sp.omega_s(a)*a
+                dm2_dt = Classic.dm2_dt(sp, a, v_s, opt)
+            else:
+                if  isinstance(a, (collections.Sequence, np.ndarray)):
+                    return np.array([Classic.dm2_dt(sp, a_i, e, opt) for a_i in a])
+                def integrand(phi):
+                    r = a*(1. - e**2)/(1. + e*np.cos(phi))
+                    v_s = np.sqrt(sp.m_total(a) *(2./r - 1./a))
+                    return Classic.dm2_dt(sp, r, v_s) / (1.+e*np.cos(phi))**2
+                dm2_dt = (1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
         dm2_baryons_dt = 0.
         if opt.baryonicHaloEffects and opt.baryonicEvolutionOptions.accretion:
@@ -444,7 +445,7 @@ class Classic:
         if opt.baryonicHaloEffects:
             dmHalo = sp.halo
             sp.halo = sp.baryonicHalo
-            dL_baryons = Classic.dL_dt(sp, a, e, opt.baryonicEvolutionOptions)
+            dL_baryons_dt = Classic.dL_dt(sp, a, e, opt.baryonicEvolutionOptions)
             sp.halo = dmHalo
 
         if opt.verbose > 2:
@@ -565,6 +566,7 @@ class Classic:
                 An evolution object that contains the results
         """
         opt.elliptic = e_0 > 0.
+        accretion = opt.accretion or (opt.baryonicHaloEffects and opt.baryonicEvolutionOptions.accretion)
 
         def g(e):
             return e**(12./19.)/(1. - e**2) * (1. + 121./304. * e**2)**(870./2299.)
@@ -581,7 +583,7 @@ class Classic:
 
         a_scale = a_0
         t_scale = t_fin
-        m_scale = sp.m2 if opt.accretion else 1.
+        m_scale = sp.m2 if accretion else 1.
 
         t_step_max = np.inf
         if opt.verbose > 0:
@@ -594,14 +596,14 @@ class Classic:
 
             # Unpack array
             a, e, m2 = y
-            a *= a_scale; sp.m2 = m2 * m_scale if opt.accretion else sp.m2
+            a *= a_scale; sp.m2 = m2 * m_scale if accretion else sp.m2
 
             if opt.verbose > 1:
                 tic = time.perf_counter()
 
             da_dt, dE_dt = Classic.da_dt(sp, a, e, opt=opt, return_dE_dt=True)
             de_dt = Classic.de_dt(sp, a, e, dE_dt=dE_dt, opt=opt) if opt.elliptic else 0.
-            dm2_dt = Classic.dm2_dt_avg(sp, a, e, opt) if opt.accretion else 0.
+            dm2_dt = Classic.dm2_dt_avg(sp, a, e, opt) if accretion else 0.
 
             if opt.verbose > 1:
                 toc = time.perf_counter()
@@ -629,7 +631,7 @@ class Classic:
         a = Int.y[0]*a_scale;
         ev = Classic.EvolutionResults(sp, opt, t, a, msg=Int.message)
         ev.e = Int.y[1] if opt.elliptic else 0.
-        ev.m2 = Int.y[2]*m_scale if opt.accretion else sp.m2;
+        ev.m2 = Int.y[2]*m_scale if accretion else sp.m2;
 
         if opt.verbose > 0:
             print(Int.message)
