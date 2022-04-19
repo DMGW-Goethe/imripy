@@ -125,6 +125,59 @@ class ConstHalo(MatterHalo):
         """
         return "ConstHalo"
 
+
+class InterpolatedHalo(MatterHalo):
+    """
+    A class describing a spherically symmetric, static Matter Halo with the help of an interpolation table.
+        Outside of the grid, the density function will return 0.
+
+    Attributes:
+        r_min (float): An minimum radius below which the density is always 0, this is initialized to 0
+        r_grid (array_like) : The grid in radii
+        density_grid (array_like) : The corresponding densities
+    """
+
+    def __init__(self, r_grid, density_grid):
+        """
+        The constructor for the ConstHalo class
+
+        Parameters:
+            r_grid : array_like
+                The grid of radii
+            density_grid : array_like
+                The corresponding grid
+        """
+        MatterHalo.__init__(self)
+        self.r_grid = r_grid
+        self.density_grid = density_grid
+
+    def density(self, r):
+        """
+        The (cubically) interpolated density function of the halo.
+        The interpolation object is created each time to allow for changes in the density grid
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the density
+
+        Returns:
+            out : float or array_like (depending on r)
+                The density at the radius r
+        """
+        rho = interp1d(self.r_grid, self.density_grid, kind='cubic', bounds_error=False, fill_value=(0.,0.))
+        return np.where(r > self.r_min, rho(r), 0.)
+
+    def __str__(self):
+        """
+        Gives the string representation of the object
+
+        Returns:
+            out : string
+                The string representation
+        """
+        return "InterpolatedHalo"
+
+
 class NFW(MatterHalo):
     """
     A class describing a Navarro-Frenk-White (NFW) halo profile.
