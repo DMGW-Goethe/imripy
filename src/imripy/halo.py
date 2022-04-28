@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.interpolate import interp1d, griddata
-from scipy.integrate import odeint, quad, simps
+from scipy.integrate import odeint, quad, simps, solve_ivp
+from scipy.optimize import root
 from scipy.special import gamma
 #import matplotlib.pyplot as plt
 import collections
@@ -619,6 +620,191 @@ class Hernquist(MatterHalo):
                 The string representation
         """
         return "Hernquist"
+
+class MichelAccretion(MatterHalo):
+    """
+    A class describing the baryonic accretion profile
+        by the Michel solution, see https://arxiv.org/pdf/2102.12529.pdf
+        with an ideal gas polytropic EoS
+            P = Kappa * rho**gamma
+
+    Attributes:
+        r_min (float): An minimum radius below which the density is always 0
+
+        # These are the model parameters
+        M     (float) : The mass of the central black hole
+        Kappa (float) : The polytropic constant
+        gamma (float) : The polytropic power law index
+        M_dot (float) : The mass accretion rate
+        theta_infty (float) : The asymptotic gas temperature
+
+        # These values are needed for the ode initial condition
+        r_s     (float) : The radius of the sonic point
+        rho_s   (float) : The density at the sonic point
+        u_s     (float) : The fluid velocity at the sonic point
+
+        # These values are calculated and saved for reference
+        h_infty     (float) : The asymptotic specific relativistic enthalpy
+        c_infty     (float) : The asymptotic adiabatic sound speed
+        lambda_M    (float) : The Michel factor
+    """
+
+    def __init__(self, M, theta_infty, Kappa, gamma):
+        """
+        The constructor for the MichelAccretion class.
+        Takes in the parameters and calculates the initial conditions needed for the ode integration
+
+        Parameters:
+            M : float
+                The mass of the central black hole
+            theta_infty : float
+                The asymptotic adiabatic sound speed of the ideal gas
+            Kappa : float
+                The constant of the polytropic EoS
+            gamma : float
+                The power law index of the polytropic EoS
+        """
+        MatterHalo.__init__(self)
+        self.M = M
+        self.Kappa = Kappa
+        self.gamma = gamma
+        self.theta_infty = theta_infty
+
+        # calculate initial conditions for integration
+        self.h_infty = 1. + self.gamma/(self.gamma-1.) * theta_infty
+        Phi = 1./3. * np.arccos(3.*(self.gamma-1.)/2./self.h_infty * (self.gamma - 2./3.)**(-3./2))
+        h_s = 2.*self.h_infty * np.sqrt(self.gamma - 2./3.) * np.sin(Phi + np.pi/6.)
+        c2_s = 1./3. * (h_s**2 / self.h_infty**2 - 1.)
+        self.c_infty = np.sqrt(self.gamma * theta_infty / self.h_infty)
+        self.lambda_M = 1./4. * (h_s/self.h_infty)**((3.*self.gamma-2.)/(self.gamma-1.)) * (np.sqrt(c2_s)/self.c_infty)**((5.-3.*self.gamma)/(self.gamma-1.))
+        self.u_s = np.sqrt( c2_s / (1. + 3.*c2_s))
+        self.r_s = 1./2. * self.M/self.u_s**2
+        self.rho_s = (h_s * c2_s / self.Kappa/self.gamma)**(1./(self.gamma-1))
+        self.M_dot = 4.*np.pi*self.r_s**2 * self.rho_s * self.u_s
+
+
+    def FromM_dot(M, M_dot, Kappa, gamma):
+        """
+        An alternative constructor, using M_dot instead of theta_infty as an input
+        This finds the corresponding theta_infty numerically and creates an object
+
+        Parameters:
+            M : float
+                The mass of the central black hole
+            M_dot : float
+                The mass accretion rate
+            Kappa : float
+                The constant of the polytropic EoS
+            gamma : float
+                The power law index of the polytropic EoS
+
+        Returns:
+            out : MichelAccretion
+                The instantiated halo object
+        """
+        # find the solution for the theta_infty parameter
+        def f(theta_infty):
+            h_infty = 1. + gamma/(gamma-1.) * theta_infty
+            Phi = 1./3. * np.arccos(3.*(gamma-1.)/2./h_infty * (gamma - 2./3.)**(-3./2))
+            h_s = 2.*h_infty * np.sqrt(gamma - 2./3.) * np.sin(Phi + np.pi/6.)
+            c_s = np.sqrt(1./3. * (h_s**2 / h_infty**2 - 1.))
+            rho_infty = (theta_infty/Kappa)**(1./(gamma-1))
+            c_infty = np.sqrt(gamma * theta_infty / h_infty)
+
+            return ( np.pi * (h_s/h_infty)**((3.*gamma-2.)/(gamma-1.))
+                           * (c_s/c_infty)**((5.-3.*gamma)/(gamma-1.))
+                           * M**2 * rho_infty / c_infty**3 ) - M_dot
+
+        theta_0 = 0.1
+        sol = root(f, x0=theta_0)
+        theta_infty = sol.x[0]
+        return MichelAccretion(M, theta_infty, Kappa, gamma)
+
+
+    def solve_ode(self, r):
+        """
+        Solves the differential equations for rho, u of the Michel system of equations
+            at the requested radii, see
+            https://arxiv.org/pdf/2102.12529.pdf
+            for reference
+
+        Parameters:
+            r : float or array_like
+                The radii at which rho, u are to be calculated, has to be strictly monotically increasing
+
+        Returns:
+            out : np.ndarray
+                This is a multidimensional array where rho = out[0,:], u = out[1,:]  arrays correspond to r
+        """
+        def dy_dr(r, y):
+            rho, u = y
+            h = 1. + self.gamma/(self.gamma-1)*self.Kappa * rho**(self.gamma-1.)
+
+            drho_dr = h* (- self.M/r**2 + 2.*u**2/r) / ( self.Kappa * self.gamma *rho**(self.gamma-2.) * (1. - 2.*self.M/r + u**2) - h*u**2/rho)
+            du_dr = -2.*u/r - drho_dr/rho * u
+            return np.array([drho_dr, du_dr])
+
+
+        y_s = [self.rho_s, self.u_s]
+        if r[0] > self.r_s:
+            sol = solve_ivp(dy_dr, [self.r_s, r[-1]], y_s, t_eval=r)
+            return sol.y
+        elif r[-1] < self.r_s:
+            sol = solve_ivp(lambda r,y: -dy_dr(np.abs(r),y) , [-self.r_s,-r[0]], y_s, t_eval=-r[::-1])
+            return np.flip(sol.y,axis=1)
+        else:
+            rs= np.split(r, [np.where(r> self.r_s)[0][0]])
+            return np.concatenate([self.solve_ode(rs[0]), self.solve_ode(rs[1])], axis=1)
+
+    def machNumber(self, r):
+        """
+        Solves the differential equations for rho, u of the Michel system of equations
+            and calculates the Mach number of the ideal gas
+
+        Parameters:
+            r : float or array_like
+                The radii at which the mach number is to be calculated, has to be strictly monotically increasing
+
+        Returns:
+            out : np.ndarray
+                The mach number at the point of interest
+        """
+        y = self.solve_ode(r)
+        rho = y[0,:]
+        u = y[1,:]
+        V = u / np.sqrt(u**2 + 1.-2.*self.M/r )
+        h = self.h_infty / np.sqrt(1. - 2.*self.M/r + u**2)
+        C = np.sqrt(self.gamma*self.Kappa * rho**(self.gamma-1) /h)
+        return V*np.sqrt(1.-C**2) / C / np.sqrt(1. - V**2)
+
+
+    def density(self, r):
+        """
+        The density function of the Michel accretion halo
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the density
+
+        Returns:
+            out : float or array_like (depending on r)
+                The density at the radius r
+        """
+        if not  isinstance(r, (collections.Sequence, np.ndarray)):
+            r = np.array([r])
+        return self.solve_ode(r)[0,:]
+
+
+    def __str__(self):
+        """
+        Gives the string representation of the object
+
+        Returns:
+            out : string
+                The string representation
+        """
+        return f"MichelAccretion(M={self.M}, M_dot={self.M_dot}, theta_infty={self.theta_infty}, Kappa={self.Kappa}, gamma={self.gamma})"
+
 
 
 class DynamicSS(MatterHalo):
