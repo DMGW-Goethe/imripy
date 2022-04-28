@@ -98,22 +98,22 @@ def h_n(n, sp, ev, dbg=False, acc=1e-13):
     TODO:
         Check redshift, luminosity distance inclusion
     """
+    s_i = np.sin(sp.inclination_angle); c_i = np.cos(sp.inclination_angle)
 
     def C_n_plus(n, sp, e):
-        return - (  2.* np.sin(sp.inclination_angle)**2 * jv(n, n*e)
-                    -  2./e**2 * (1. + np.cos(sp.inclination_angle)**2) * np.cos(2.*sp.pericenter_angle)
+        return  (  2.* s_i**2 * jv(n, n*e) +  2./e**2 * (1. + c_i**2) * np.cos(2.*sp.pericenter_angle)
                               * ((e**2 - 2.)*jv(n, n*e) + n*e*(1.-e**2) * (jv(n-1, n*e) - jv(n+1, n*e))) )
 
     def S_n_plus(n, sp, e):
-        return - ( 2./e**2 * np.sqrt(1. - e**2) * (1. + np.cos(sp.inclination_angle)**2) * np.sin(2.*sp.pericenter_angle)
+        return - ( 2./e**2 * np.sqrt(1. - e**2) * (1. + c_i**2) * np.sin(2.*sp.pericenter_angle)
                             * ( -2.*(1.-e**2)*n*jv(n, n*e) + e*(jv(n-1, n*e) - jv(n+1, n*e)) ) )
 
     def C_n_cross(n, sp, e):
-        return - ( 4./e**2 * np.cos(sp.inclination_angle)*np.sin(2.*sp.pericenter_angle)
-                          * ( (e**2 - 2.)*jv(n, n*e) +  n*e*(1.-e**2)*(jv(n-1, n*e) - jv(n+1, n*e)) ) )
+        return - ( 4./e**2 * c_i*np.sin(2.*sp.pericenter_angle)
+                          * ( (2. - e**2)*jv(n, n*e) +  n*e*(1.-e**2)*(jv(n-1, n*e) - jv(n+1, n*e)) ) )
 
     def S_n_cross(n, sp, e):
-        return - ( 4./e**2 * np.sqrt(1. - e**2) * np.cos(sp.inclination_angle) * np.cos(2.*sp.pericenter_angle)
+        return - ( 4./e**2 * np.sqrt(1. - e**2) * c_i * np.cos(2.*sp.pericenter_angle)
                             * ( -2.*(1.-e**2)*n*jv(n, n*e) +  e*(jv(n-1, n*e) - jv(n+1, n*e)) ) )
 
     # Calculate the Keplerian orbital frequency and its derivative over time
