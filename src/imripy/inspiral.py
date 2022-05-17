@@ -64,7 +64,7 @@ class Classic:
             self.accretion = accretion
             self.accretionForceLoss = accretionForceLoss and accretion
             self.accretionRecoilLoss = accretionRecoilLoss and accretion
-            self.accretionModel = accretionModel if accretionModel in ['Collisionless', 'Bondi-Hoyle'] else ''
+            self.accretionModel = accretionModel if accretionModel in ['Classic', 'Bondi-Hoyle'] else 'Classic'
             self.baryonicHaloEffects = baryonicHaloEffects
             self.baryonicEvolutionOptions = baryonicEvolutionOptions
             self.haloPhaseSpaceDescription = haloPhaseSpaceDescription
@@ -208,9 +208,16 @@ class Classic:
         ln_Lambda = Classic.ln_Lambda
         if ln_Lambda < 0.:
             ln_Lambda = np.log(sp.m1/sp.m2)/2.
+        relCovFactor = 1.
+        if 'relativisticDynamicalFrictionCorrections' in opt.additionalParameters and opt.additionalParameters['relativisticDynamicalFrictionCorrections']:
+            relCovFactor = (1. + v**2)**2 / (1. - v**2)
+
         if opt.haloPhaseSpaceDescription:
-            return 4.*np.pi * sp.m2**2 * sp.halo.density(r, v_max=(opt.additionalParameters['v_max'] if 'v_max' in opt.additionalParameters else v)) * ln_Lambda / v**2
-        return 4.*np.pi * sp.m2**2 * sp.halo.density(r) * Classic.dmPhaseSpaceFraction * ln_Lambda / v**2
+            density = sp.halo.density(r, v_max=(opt.additionalParameters['v_max'] if 'v_max' in opt.additionalParameters else v))
+        else:
+            density = sp.halo.density(r) * Classic.dmPhaseSpaceFraction
+
+        return 4.*np.pi * relCovFactor * sp.m2**2 * density * ln_Lambda / v**2
 
 
     def BH_cross_section(sp, v, opt=EvolutionOptions()):
