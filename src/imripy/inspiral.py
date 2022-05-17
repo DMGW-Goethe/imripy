@@ -177,6 +177,8 @@ class Classic:
         The function gives the force of the dynamical friction of an object inside a dark matter halo at radius r (since we assume a spherically symmetric halo)
             and with velocity v
         The ln_Lambda is the Coulomb logarithm, for which different authors use different values. Set to -1 so that Lambda = sqrt(m1/m2)
+        The opt.relativisticDynamicalFrictionCorrections parameter allows the use of the correction factor as given by eq (15) of
+                https://arxiv.org/pdf/2204.12508.pdf ( except for the typo in the gamma factor )
         The opt.useHaloPhaseSpaceDescription parameter allows to use not the total dark matter density at r, but uses the halo phase space description
             such that only particles below a given v_max scatter. This option requires sp.halo to be of type DynamicSS.
             v_max can be provided via opt.additionalParameters['v_max']. If v_max is None, it is taken to be the orbital velocity.
