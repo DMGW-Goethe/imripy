@@ -84,7 +84,7 @@ class Classic:
                 s += f" dynamicalFrictionLoss = {self.dynamicalFrictionLoss},"
             s += f"accretion = {self.accretion}"
             if self.accretion:
-                s += f" (accretionForceLoss = {self.accretionForceLoss}, accretionRecoilLoss = {self.accretionRecoilLoss})"
+                s += f" (accretionForceLoss = {self.accretionForceLoss}, accretionRecoilLoss = {self.accretionRecoilLoss}, accretionModel = {self.accretionModel})"
             s += f", haloPhaseSpaceDescription = {self.haloPhaseSpaceDescription}"
             s += f", accuracy = {self.accuracy:.1e}"
             if self.baryonicHaloEffects:
