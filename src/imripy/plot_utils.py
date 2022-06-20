@@ -39,7 +39,7 @@ def plotEvolution(sp, ev, ax_a=None, ax_e=None, label="", ax_ae=None, ax_m=None,
         l, = ax_ae.plot(ev.a/sp.r_isco(), ev.e, color=(l.get_c() if not l is None else None), label=label)
     return l
 
-def plotGWcharacteristicStrain(sp, ev, ax_h, label="", acc=1e-13, harmonics=[2], color=None):
+def plotGWcharacteristicStrain(sp, ev, ax_h, label="", acc=1e-13, harmonics=[2], color=None, **kwargs):
     """
     Plots the characteristic strain in its harmonics in the natural units that are used throughout the code.
     The lines will have the same color and alternating linestyle
@@ -51,6 +51,7 @@ def plotGWcharacteristicStrain(sp, ev, ax_h, label="", acc=1e-13, harmonics=[2],
         harmonics (list of integers)    : The list of harmonics to be plotted
         label (string)      (optional)  : The label corresponding to the lines
         color               (optional)  : The color of the lines. Can be anything that matplotlib accepts as color
+        **kwargs                        : Other parameters that can be passed to the plotting
     """
     linecycler = cycle(["-", "--", "-.", ":"])
     color_cycle = ax_h._get_lines.prop_cycler
@@ -58,11 +59,11 @@ def plotGWcharacteristicStrain(sp, ev, ax_h, label="", acc=1e-13, harmonics=[2],
     c = color if not color is None else next(color_cycle)['color']
     for n in harmonics:
         wf = waveform.h_n(n, sp, ev, acc=acc)
-        l, = ax_h.loglog(wf[0]/ms.hz_to_invpc, 2.*wf[0]*np.abs(wf[1]), linestyle=next(linecycler), color=color,
-                                 label=r"$h^{(" + str(n) +")}_{c,+," + label +"}$")
+        l, = ax_h.loglog(wf[0]/ms.hz_to_invpc, 2.*wf[0]*np.abs(wf[1]), linestyle=next(linecycler),
+                                 label=r"$h^{(" + str(n) +")}_{c,+," + label +"}$", color=c, **kwargs)
 
 
-def plotDeltaN(sp_0, ev_0, sp_1, ev_1, ax_dN, n=2, label="",  acc=1e-13, color=None, linestyle=None):
+def plotDeltaN(sp_0, ev_0, sp_1, ev_1, ax_dN, n=2, acc=1e-13, plotFgw5year=False, **kwargs):
     """
     Plots the dephasing of a given harmonic in the natural units that are used throughout the code.
 
@@ -73,9 +74,8 @@ def plotDeltaN(sp_0, ev_0, sp_1, ev_1, ax_dN, n=2, label="",  acc=1e-13, color=N
         ev_1 (inspiral.Classic.Evolution) : The evolution object that results from the alternative inspiral modeling
         ax_dN (plt.axes)                  : The axes on which to plot the difference in cycles left to observe
         n (int)             (optional)    : The harmonic to be plotted
-        label (string)      (optional)   : The label corresponding to the lines
-        color               (optional)   : The color of the lines. Can be anything that matplotlib accepts as color
-        linestyle           (optional)   : The linestyle of the lines
+        plotFgw5year (bool) (optional)    : Whether to plot the line that represents 5 years to merger in vacuum case
+        **kwargs                          : Other parameters that can be passed to the plotting, i.e. label, color, linestyle
 
     Returns:
         f_gw1 : array_like
@@ -88,7 +88,11 @@ def plotDeltaN(sp_0, ev_0, sp_1, ev_1, ax_dN, n=2, label="",  acc=1e-13, color=N
     f_gw1, N_1 = waveform.N_cycles_n(n, sp_1, ev_1, acc=acc)
 
     dN = np.abs(N_1 - N_0interp(f_gw1))
-    ax_dN.loglog(f_gw1/ms.hz_to_invpc, dN, color=color, linestyle=linestyle, label=label)
+    l, = ax_dN.loglog(f_gw1/ms.hz_to_invpc, dN, **kwargs)
+
+    if plotFgw5year:
+        f_gw5yr = interp1d(ev_0.t, f_gw0, kind='cubic', bounds_error=True)(ev_0.t[-1] - 5.*ms.year_to_pc)
+        ax_dN.axvline(f_gw5yr/ms.hz_to_invpc, linestyle='--', color=l.get_c())
     return f_gw1, dN
 
 
