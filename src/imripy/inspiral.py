@@ -220,7 +220,7 @@ class Classic:
         return 4.*np.pi * relCovFactor * sp.m2**2 * density * ln_Lambda / v**2
 
 
-    def BH_cross_section(sp, v, opt=EvolutionOptions()):
+    def BH_cross_section(sp, r, v, opt=EvolutionOptions()):
         """
         The function gives the cross section of a small black hole (m2) moving through a halo of particles
         Choose model through opt.accretionModel parameter
@@ -237,8 +237,16 @@ class Classic:
                 The black hole cross section
         """
         if opt.accretionModel == 'Bondi-Hoyle':
-            dm_soundspeed2 = opt.additionalParameters['dm_soundspeed2'] if 'dm_soundspeed2' in opt.additionalParameters else 0.
-            return 4.*np.pi * sp.m2**2 / (v**2 +  dm_soundspeed2)**(3./2.)  / v
+            if hasattr(sp.halo, 'soundspeed'):
+                dm_soundspeed2 = sp.halo.soundspeed(r)**2
+            elif 'dm_soundspeed2' in opt.additionalParameters:
+                dm_soundspeed2 = opt.additionalParameters['dm_soundspeed2']
+            else:
+                dm_soundspeed2 = 0.
+            v_halo_r, v_halo_phi = sp.halo.velocity(r) if hasattr(sp.halo, 'velocity') else [0.,0.]
+            delta_v = np.sqrt(v**2 + v_halo_r**2)  # TODO: Improve!!
+            #print(v, v_halo_r, delta_v)
+            return 4.*np.pi * sp.m2**2 / (delta_v**2 +  dm_soundspeed2)**(3./2.)  / delta_v
 
         return (np.pi * sp.m2**2. / v**2.) * (8. * (1. - v**2.))**3 / (4. * (1. - 4. * v**2. + (1. + 8. * v**2.)**(1./2.)) * (3. - (1. + 8. * v**2.)**(1./2.))**2.)
         #return 16. * np.pi * sp.m2**2 / v**2  * (1. + v**2)
@@ -260,7 +268,7 @@ class Classic:
             out : float
                 The mass gain due to accretion
         """
-        return sp.halo.density(r) * v * Classic.BH_cross_section(sp, v, opt)
+        return sp.halo.density(r) * v * Classic.BH_cross_section(sp, r, v, opt)
 
 
     def dm2_dt_avg(sp, a, e=0., opt=EvolutionOptions()):
