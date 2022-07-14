@@ -1,6 +1,9 @@
 from .halo import *
+import imripy.merger_system as ms
 
-from scipy.optimize import root_scalar
+from scipy.optimize import root_scalar, root
+
+
 
 class MichelAccretion(MatterHalo):
     """
@@ -263,6 +266,252 @@ class MichelAccretion(MatterHalo):
                 The string representation
         """
         return f"MichelAccretion(M={self.M}, M_dot={self.M_dot}, M_dot/M_dot_Edd={self.M_dot/(2.2 * 1e-9 * self.M /0.3064)}, rho_c={self.rho_c}, u_c={self.u_c}, kappa={self.kappa}, Gamma={self.Gamma})"
+
+
+class ShakuraSunyaevDisc(MatterHalo):
+    """
+    The class describing a baryonic accretion disc as introduced by Shakura & Sunyaev
+        as given by the equations of appendix A of https://arxiv.org/pdf/2206.05292.pdf
+
+    Attributes:
+        r_min (float): An minimum radius below which the density is always 0
+
+        # These are the model parameters
+        M     (float) : The mass of the central black hole
+        M_dot (float) : The accretion rate of the central black hole
+        alpha (float) : The viscosity parameter <1
+
+        # These constants are needed for computation
+        boltzmann_constant  (float) : in units of pc/Kelvin
+        stefan_boltzmann_constant   (float) : in 1/pc^2/Kelving^4
+        hydrogen_mass   (float) : in pc
+        a_rad   (float) : radiation density constant
+    """
+
+    boltzmann_constant = 3.697e-84  # in pc / kelvin
+    stefan_boltzmann_constant = 1.563e-60 / ms.m_to_pc**2  # in 1/pc^2 / Kelvin^4
+    mean_molecular_weight = 0.62
+    hydrogen_mass = 1.243e-54 * ms.m_to_pc  # in pc
+
+
+    def __init__(self, M, M_dot, alpha):
+        """
+        The constructor for the ShakuraSunyaev class.
+
+        Parameters:
+            M : float
+                The mass of the central black hole
+            M_dot : float
+                The accretion rate
+            alpha : float
+                The viscosity coefficient <1
+        """
+        MatterHalo.__init__(self)
+        self.M = M
+        self.M_dot = M_dot
+        self.alpha = alpha
+
+    def opacity_scaling(rho, T):
+        """
+        Calculates the opacity scaling of an accretion disk depending on temperature and density
+        Values taken from https://arxiv.org/pdf/2205.10382.pdf
+
+        Parameters:
+            rho : floa
+                The density in units of TODO
+            T   : float
+                The temperature in units of Kelvin
+
+        Returns:
+            out : float
+                The Rosseland mean opacity
+        """
+        kappa_0 = 0.; a = 0.; b = 0.
+        if T < 166.81:
+            kappa_0 = 2e-4;     a = 0; b = 2.
+        elif T < 202.677:
+            kappa_0 = 2e16;     a = 0; b = -7.
+        elif T < 2286.77 * rho**(2./49.) :
+            kappa_0 = 1e-1;     a = 0; b = 1./2.
+        elif T < 2029.76 * rho**(1./81.) :
+            kappa_0 = 2e81;     a = 1; b = -24.
+        elif T < 1e4 * rho**(1./21.) :
+            kappa_0 = 1e-8;     a = 2./3.; b = 3.
+        elif T < 31195.2 * rho**(4./75.) :
+            kappa_0 = 1e-36;    a = 1./3.; b = 10.
+        elif T < 1.79393e8 * rho**(2./5.) :
+            kappa_0 = 1.5e20;   a = 1; b = -5./2.
+        elif T > 2e-4:
+            kappa_0 = 0.348;    a = 0.; b = 0.
+        #print(kappa_0, a, b, rho**a, T**b)
+        return kappa_0 * rho**a * T**b
+
+
+
+    def solve_eq(self, r, rho_0=None, Sigma_0=None, T_mid_0=None, c_s2_0=None):
+        """
+        Solves the nonlinear equations of density, surface density, temperature and sound speed describing the disc
+            as given in appendix A of https://arxiv.org/pdf/2206.05292.pdf
+
+        Parameters:
+            r : float
+                The radius of the point of interest
+            *_0   (optional): float
+                The initial guesses for the values of interest
+                can e.g. be passed if a point nearby is known already
+
+        Returns:
+            rho: float
+                The density at the radius r
+            Sigma : float
+                The surface density at radius r
+            T_mid : float
+                The midplane temperature
+            c_s2   : float
+                The soundspeed squared
+        """
+        if r < self.r_min:
+            return 0., 0., 0., 0.
+        # calculate knowns at the given radius
+        Omega = np.sqrt(self.M/r**3)
+        M_dot_prime = self.M_dot * (1. - np.sqrt(self.r_min/r))
+        T_eff =  (3./8./np.pi * Omega**2 * M_dot_prime / self.stefan_boltzmann_constant)**(1./4.)
+        print(f"Omega = {Omega:.3e}, M_dot_prime={M_dot_prime:.3e}, T_eff={T_eff:.3e}")
+
+        def f(x):
+            rho, Sigma, T_mid, c_s2 = x
+
+            nu = self.alpha * c_s2 / Omega
+            kappa = ShakuraSunyaevDisc.opacity_scaling(rho/ms.g_cm3_to_invpc2, T_mid) / ms.g_cm2_to_invpc # TODO: check units
+            tau_opt = kappa*Sigma/2.
+
+            # target values
+            rho_t = Sigma/2. * Omega / np.sqrt(c_s2)
+            Sigma_t = M_dot_prime/3./np.pi/nu
+            c_s2_t = (self.boltzmann_constant / self.hydrogen_mass / self.mean_molecular_weight *T_mid
+                             +  4./3. * self.stefan_boltzmann_constant * T_mid**4. / rho)
+            c_s2_t = np.min([1., c_s2_t])
+            T_mid_t = (3./8. * tau_opt + 1./2. + 1./4./tau_opt)**(1./4.) * T_eff
+            print(f"kappa = {kappa*ms.g_cm2_to_invpc}, tau_opt = {tau_opt}")
+            print(f"rho={rho:.3e}->{rho_t:.3e}, Sigma={Sigma:.3e}->{Sigma_t:.3e}, T_mid={T_mid:.3e}->{T_mid_t:.3e}, c_s2={c_s2:.3e}->{c_s2_t:.3e}")
+            return np.array([rho_t - rho, Sigma_t - Sigma, T_mid_t - T_mid,  c_s2_t - c_s2])
+
+        # choose initial values
+        T_mid_0 = T_eff if T_mid_0 is None else T_mid_0
+        # c_s2_0 = np.sqrt(self.boltzmann_constant / self.hydrogen_mass / self.mean_molecular_weight * T_mid_0
+        #                      + 1./3. *self.a_rad * T_mid_0**4 / rho)  if c_s2_0 is None else c_s2_0
+        c_s2_0 = (self.boltzmann_constant / self.hydrogen_mass / self.mean_molecular_weight *T_mid_0)  if c_s2_0 is None else c_s2_0
+        c_s2_0 = np.min([c_s2_0, 1.])
+        Sigma_0 = M_dot_prime/ 3./np.pi/self.alpha/c_s2_0 * Omega if Sigma_0 is None else Sigma_0
+        rho_0 = Sigma_0/2./np.sqrt(c_s2_0)*Omega if rho_0 is None else rho_0
+
+        # compute solution
+        x_0 = np.array([rho_0, Sigma_0, T_mid_0, c_s2_0])
+        print(x_0)
+        sol = root(f, x0 = x_0, method='lm')
+        print(sol.success, sol.message, sol.x)
+        rho, Sigma, T_mid, c_s2 = sol.x
+
+        return rho, Sigma, T_mid, c_s2
+
+    def density(self, r):
+        """
+        The density function of the disc
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the density
+
+        Returns:
+            out : float or array_like (depending on r)
+                The density at the radius r
+        """
+        if isinstance(r, (np.ndarray, collections.Sequence)):
+            density = np.zeros(np.shape(r))
+            rho = None; Sigma = None; T_mid = None; c_s2 = None
+            for i in range(len(r)):
+                rho, Sigma, T_mid, c_s2 = self.solve_eq(r[i], rho_0=rho, Sigma_0=Sigma, T_mid=T_mid, c_s2_0=c_s2)
+                density[i] = rho
+            return density
+
+        return self.solve_eq(r)[0]
+
+    def surface_density(self, r):
+        """
+        The surface density function of the disc
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the density
+
+        Returns:
+            out : float or array_like (depending on r)
+                The surface density at the radius r
+        """
+        if isinstance(r, (np.ndarray, collections.Sequence)):
+            surface_density = np.zeros(np.shape(r))
+            rho = None; Sigma = None; T_mid = None; c_s2 = None
+            for i in range(len(r)):
+                rho, Sigma, T_mid, c_s2 = self.solve_eq(r[i], rho_0=rho, Sigma_0=Sigma, T_mid=T_mid, c_s2_0=c_s2)
+                surface_density[i] = Sigma
+            return surface_density
+
+        return self.solve_eq(r)[1]
+
+
+    def mach_number(self, r):
+        """
+        The mach number of the disc at radius r
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the density
+
+        Returns:
+            out : float or array_like (depending on r)
+                The mach number at the radius r
+        """
+        if isinstance(r, (np.ndarray, collections.Sequence)):
+            mach_number = np.zeros(np.shape(r))
+            rho = None; Sigma = None; T_mid = None; c_s2 = None
+            for i in range(len(r)):
+                rho, Sigma, T_mid, c_s2 = self.solve_eq(r[i], rho_0=rho, Sigma_0=Sigma, T_mid=T_mid, c_s2_0=c_s2)
+                h = Sigma/2./rho
+                mach_number[i] = r[i]/h
+            return mach_number
+
+        rho, Sigma, T_mid, c_s2 = self.solve_eq(r)
+        h = Sigma/2./rho
+        return r/h
+
+    def CreateInterpolatedHalo(self, r_grid):
+        """
+        Creates an InterpolatedHalo object of this instance for a given r_grid
+        and adds the additional functions defined in this class
+
+        Parameters:
+            r_grid : array_like
+                The grid in radius on which to interpolate the class functions
+
+        Returns:
+            out : InterpolatedHalo
+                Instance of InterpolatedHalo with additional functions mimicking this class
+        """
+        res = []
+        rho = None; Sigma = None; T_mid = None; c_s2 = None
+        for i in range(len(r_grid)):
+            rho, Sigma, T_mid, c_s2 = self.solve_eq(r_grid[i], rho_0=rho, Sigma_0=Sigma, T_mid_0=T_mid, c_s2_0=c_s2)
+            res.append([rho, Sigma, T_mid, c_s2])
+        res = np.array(res)
+        rho = res[:,0]; Sigma = res[:,1];
+        interpHalo = InterpolatedHalo(r_grid, rho)
+        interpHalo.surface_density = interp1d(r_grid, Sigma, kind='cubic', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.mach_number = interp1d(r_grid, r_grid/Sigma * 2 * rho, kind='cubic', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.alpha = self.alpha
+        return interpHalo
+
+
+
 
 class MiyamotoNagaiDisc(MatterHalo):
     """
