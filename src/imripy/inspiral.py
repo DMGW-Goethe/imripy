@@ -349,6 +349,36 @@ class Classic:
         """
         return Classic.dm2_dt(sp, r, v, opt) * v
 
+    def F_gas(sp, r, v, opt=EvolutionOptions()):
+        """
+        The function gives the force an accretion disc would exert through gas torques on a smaller black hole at radius r
+            and with velocity v
+            as given by section 4 of https://arxiv.org/pdf/2206.05292.pdf
+
+        Parameters:
+            sp (SystemProp) : The object describing the properties of the inspiralling system
+            r  (float)      : The radius of the orbiting object
+            v  (float)      : The speed of the orbiting object
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+
+        Returns:
+            out : float
+                The magnitude of the gas torque force
+        """
+        mach_number = sp.halo.mach_number(r)
+        Sigma = sp.halo.surface_density(r)
+        alpha = sp.halo.alpha  # requires ShakuraSunyaevDisc atm
+        Omega = sp.omega_s(r)
+        #Gamma_lin = Sigma*r**4 * Omega**2 * (sp.m2/sp.m1)**2 * mach_number**2
+        Gamma_vis = 3.*np.pi * alpha * Sigma * r**4 * Omega**2 / mach_number**2
+
+        fudge_factor = opt.additionalParameters['gasTorqueFudgeFactor'] if 'gasTorqueFudgeFactor' in opt.additionalParameters else 1.
+        Gamma_gas = fudge_factor * Gamma_vis
+
+        F_gas = Gamma_gas * sp.m2/sp.m1 / r
+        return F_gas
+
+
 
     def dE_force_dt(sp, F, a, e=0., opt=EvolutionOptions()):
         """
@@ -423,6 +453,7 @@ class Classic:
         dE_df_dt = Classic.dE_force_dt(sp, Classic.F_df, a, e, opt) if opt.dynamicalFrictionLoss else 0.
         dE_acc_dt = Classic.dE_force_dt(sp, Classic.F_acc, a, e, opt) if opt.accretionForceLoss else 0.
         dE_acc_dt += Classic.dE_force_dt(sp, Classic.F_acc_recoil, a, e, opt) if opt.accretionRecoilLoss else 0.
+        dE_gas_dt = Classic.dE_force_dt(sp, Classic.F_gas, a, e, opt) if 'gasTorqueLoss' in opt.additionalParameters else 0.
 
         dE_baryons_dt = 0.
         if opt.baryonicHaloEffects:
@@ -432,8 +463,8 @@ class Classic:
             sp.halo = dmHalo
 
         if opt.verbose > 2:
-            print(f"dE_gw_dt= {dE_gw_dt}, dE_df_dt= {dE_df_dt}, dE_acc_dt= {dE_acc_dt}, dE_baryons_dt = {dE_baryons_dt}")
-        return ( dE_gw_dt + dE_df_dt + dE_acc_dt + dE_baryons_dt)
+            print(f"dE_gw_dt= {dE_gw_dt}, dE_df_dt= {dE_df_dt}, dE_acc_dt= {dE_acc_dt}, dE_gas_dt= {dE_gas_dt}, dE_baryons_dt = {dE_baryons_dt}")
+        return ( dE_gw_dt + dE_df_dt + dE_acc_dt + dE_gas_dt + dE_baryons_dt)
 
 
     def dL_dt(sp, a, e, opt=EvolutionOptions()):
@@ -455,6 +486,7 @@ class Classic:
         dL_df_dt = Classic.dL_force_dt(sp, Classic.F_df, a, e, opt) if opt.dynamicalFrictionLoss else 0.
         dL_acc_dt = Classic.dL_force_dt(sp, Classic.F_acc, a, e, opt) if opt.accretionForceLoss else 0.
         dL_acc_dt += Classic.dL_force_dt(sp, Classic.F_acc_recoil, a, e, opt) if opt.accretionRecoilLoss else 0.
+        dL_gas_dt = Classic.dL_force_dt(sp, Classic.F_gas, a, e, opt) if 'gasTorqueLoss' in opt.additionalParameters else 0.
 
         dL_baryons_dt = 0.
         if opt.baryonicHaloEffects:
@@ -464,8 +496,8 @@ class Classic:
             sp.halo = dmHalo
 
         if opt.verbose > 2:
-            print(f"dL_gw_dt= {dL_gw_dt}, dL_df_dt= {dL_df_dt}, dL_acc_dt= {dL_acc_dt}, dL_baryons_dt = {dL_baryons_dt}")
-        return  (dL_gw_dt + dL_df_dt + dL_acc_dt + dL_baryons_dt)
+            print(f"dL_gw_dt= {dL_gw_dt}, dL_df_dt= {dL_df_dt}, dL_acc_dt= {dL_acc_dt}, dL_gas_dt= {dL_gas_dt}, dL_baryons_dt = {dL_baryons_dt}")
+        return  (dL_gw_dt + dL_df_dt + dL_acc_dt + dL_gas_dt + dL_baryons_dt)
 
 
     def da_dt(sp, a, e=0., opt=EvolutionOptions(), return_dE_dt=False):
