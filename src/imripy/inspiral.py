@@ -351,9 +351,12 @@ class Classic:
 
     def F_gas(sp, r, v, opt=EvolutionOptions()):
         """
-        The function gives the force an accretion disc would exert through gas torques on a smaller black hole at radius r
-            and with velocity v
-            as given by section 4 of https://arxiv.org/pdf/2206.05292.pdf
+        The function gives the force an accretion disc would exert on a smaller black hole for different models of gas interaction
+
+        Choose model through opt.gasInteraction parameter
+            'gasTorqueLoss' : according to https://arxiv.org/pdf/2206.05292.pdf
+            'dynamicalFriction' : according to https://arxiv.org/pdf/2006.10206.pdf
+
 
         Parameters:
             sp (SystemProp) : The object describing the properties of the inspiralling system
@@ -363,19 +366,30 @@ class Classic:
 
         Returns:
             out : float
-                The magnitude of the gas torque force
+                The magnitude of the force through gas interactions
         """
-        mach_number = sp.halo.mach_number(r)
-        Sigma = sp.halo.surface_density(r)
-        alpha = sp.halo.alpha  # requires ShakuraSunyaevDisc atm
-        Omega = sp.omega_s(r)
-        #Gamma_lin = Sigma*r**4 * Omega**2 * (sp.m2/sp.m1)**2 * mach_number**2
-        Gamma_vis = 3.*np.pi * alpha * Sigma * r**4 * Omega**2 / mach_number**2
+        if opt.additionalParameters['gasInteraction'] == 'gasTorqueLoss':
+            mach_number = sp.halo.mach_number(r)
+            Sigma = sp.halo.surface_density(r)
+            alpha = sp.halo.alpha  # requires ShakuraSunyaevDisc atm
+            Omega = sp.omega_s(r)
+            # Gamma_lin = Sigma*r**4 * Omega**2 * (sp.m2/sp.m1)**2 * mach_number**2
+            Gamma_vis = 3.*np.pi * alpha * Sigma * r**4 * Omega**2 / mach_number**2 if mach_number > 0. else 0.
 
-        fudge_factor = opt.additionalParameters['gasTorqueFudgeFactor'] if 'gasTorqueFudgeFactor' in opt.additionalParameters else 1.
-        Gamma_gas = fudge_factor * Gamma_vis
+            fudge_factor = opt.additionalParameters['gasTorqueFudgeFactor'] if 'gasTorqueFudgeFactor' in opt.additionalParameters else 1.
+            Gamma_gas = fudge_factor * Gamma_vis
 
-        F_gas = Gamma_gas * sp.m2/sp.m1 / r
+            F_gas = Gamma_gas * sp.m2/sp.m1 / r
+
+        elif opt.additionalParameters['gasInteraction'] == 'dynamicalFriction':
+            H = sp.halo.scale_height(r)
+            v_rel = v   # TODO: Improve
+            R_acc = 2.*sp.m2 /v_rel**2
+            Sigma = sp.halo.surface_density(r)
+            coulombLog = opt.additionalParameters['gasCoulombLog'] if 'gasCoulombLog' in opt.additionalParameters else 7.15*H/R_acc
+
+            F_gas =  np.sqrt(8.*np.pi) * Sigma * sp.m2**2 * coulombLog / H / v_rel**2 if Sigma > 0. else 0.
+
         return F_gas
 
 
@@ -453,7 +467,7 @@ class Classic:
         dE_df_dt = Classic.dE_force_dt(sp, Classic.F_df, a, e, opt) if opt.dynamicalFrictionLoss else 0.
         dE_acc_dt = Classic.dE_force_dt(sp, Classic.F_acc, a, e, opt) if opt.accretionForceLoss else 0.
         dE_acc_dt += Classic.dE_force_dt(sp, Classic.F_acc_recoil, a, e, opt) if opt.accretionRecoilLoss else 0.
-        dE_gas_dt = Classic.dE_force_dt(sp, Classic.F_gas, a, e, opt) if 'gasTorqueLoss' in opt.additionalParameters else 0.
+        dE_gas_dt = Classic.dE_force_dt(sp, Classic.F_gas, a, e, opt) if 'gasInteraction' in opt.additionalParameters else 0.
 
         dE_baryons_dt = 0.
         if opt.baryonicHaloEffects:
@@ -486,7 +500,7 @@ class Classic:
         dL_df_dt = Classic.dL_force_dt(sp, Classic.F_df, a, e, opt) if opt.dynamicalFrictionLoss else 0.
         dL_acc_dt = Classic.dL_force_dt(sp, Classic.F_acc, a, e, opt) if opt.accretionForceLoss else 0.
         dL_acc_dt += Classic.dL_force_dt(sp, Classic.F_acc_recoil, a, e, opt) if opt.accretionRecoilLoss else 0.
-        dL_gas_dt = Classic.dL_force_dt(sp, Classic.F_gas, a, e, opt) if 'gasTorqueLoss' in opt.additionalParameters else 0.
+        dL_gas_dt = Classic.dL_force_dt(sp, Classic.F_gas, a, e, opt) if 'gasInteraction' in opt.additionalParameters else 0.
 
         dL_baryons_dt = 0.
         if opt.baryonicHaloEffects:
@@ -623,7 +637,7 @@ class Classic:
             t_coal = t_coal * 48./19. / g(e_0)**4 * quad(lambda e: g(e)**4 *(1-e**2)**(5./2.) /e/(1. + 121./304. * e**2), 0., e_0, limit=100)[0]   # The inspiral time according to Maggiore (2007)
 
         if t_fin is None:
-            t_fin = 1.01 * t_coal *( 1. - a_fin**4 / a_0**4)    # This is the time it takes with just gravitational wave emission
+            t_fin = 1.2 * t_coal *( 1. - a_fin**4 / a_0**4)    # This is the time it takes with just gravitational wave emission
 
         if a_fin == 0.:
             a_fin = sp.r_isco()     # Stop evolution at r_isco
