@@ -4,7 +4,6 @@ import imripy.merger_system as ms
 from scipy.optimize import root_scalar, root
 
 
-
 class MichelAccretion(MatterHalo):
     """
     A class describing the baryonic accretion profile
@@ -268,7 +267,31 @@ class MichelAccretion(MatterHalo):
         return f"MichelAccretion(M={self.M}, M_dot={self.M_dot}, M_dot/M_dot_Edd={self.M_dot/(2.2 * 1e-9 * self.M /0.3064)}, rho_c={self.rho_c}, u_c={self.u_c}, kappa={self.kappa}, Gamma={self.Gamma})"
 
 
-class ShakuraSunyaevDisc(MatterHalo):
+class BaryonicDisc(MatterHalo):
+    """
+    An abstract class designed to streamline implementation of different baryonic disc models. Inherits from MatterHalo, but is axially symmetric, not spherically symmetric.
+    Has additional functions usually used to describe baryonic discs
+
+    """
+    def __init__(self):
+        super().__init__()
+
+
+    def surface_density(self, r):
+        pass
+
+    def scale_height(self, r):
+        pass
+
+    def mach_number(self, r):
+        pass
+
+    def soundspeed(self, r):
+        pass
+
+
+
+class ShakuraSunyaevDisc(BaryonicDisc):
     """
     The class describing a baryonic accretion disc as introduced by Shakura & Sunyaev
         as given by the equations of appendix A of https://arxiv.org/pdf/2206.05292.pdf
@@ -306,7 +329,7 @@ class ShakuraSunyaevDisc(MatterHalo):
             alpha : float
                 The viscosity coefficient <1
         """
-        MatterHalo.__init__(self)
+        BaryonicDisc.__init__(self)
         self.M = M
         self.M_dot = M_dot
         self.alpha = alpha
@@ -376,13 +399,14 @@ class ShakuraSunyaevDisc(MatterHalo):
         Omega = np.sqrt(self.M/r**3)
         M_dot_prime = self.M_dot * (1. - np.sqrt(self.r_min/r))
         T_eff =  (3./8./np.pi * Omega**2 * M_dot_prime / self.stefan_boltzmann_constant)**(1./4.)
-        print(f"Omega = {Omega:.3e}, M_dot_prime={M_dot_prime:.3e}, T_eff={T_eff:.3e}")
+        # print(f"Omega = {Omega:.3e}, M_dot_prime={M_dot_prime:.3e}, T_eff={T_eff:.3e}")
 
         def f(x):
             rho, Sigma, T_mid, c_s2 = x
 
             nu = self.alpha * c_s2 / Omega
-            kappa = ShakuraSunyaevDisc.opacity_scaling(rho/ms.g_cm3_to_invpc2, T_mid) / ms.g_cm2_to_invpc # TODO: check units
+            kappa = ShakuraSunyaevDisc.opacity_scaling(np.max([rho/ms.g_cm3_to_invpc2, 0.]), T_mid) / ms.g_cm2_to_invpc # TODO: check units
+            kappa = np.inf if kappa <= 0. else kappa
             tau_opt = kappa*Sigma/2.
 
             # target values
@@ -392,24 +416,29 @@ class ShakuraSunyaevDisc(MatterHalo):
                              +  4./3. * self.stefan_boltzmann_constant * T_mid**4. / rho)
             c_s2_t = np.min([1., c_s2_t])
             T_mid_t = (3./8. * tau_opt + 1./2. + 1./4./tau_opt)**(1./4.) * T_eff
-            print(f"kappa = {kappa*ms.g_cm2_to_invpc}, tau_opt = {tau_opt}")
-            print(f"rho={rho:.3e}->{rho_t:.3e}, Sigma={Sigma:.3e}->{Sigma_t:.3e}, T_mid={T_mid:.3e}->{T_mid_t:.3e}, c_s2={c_s2:.3e}->{c_s2_t:.3e}")
+            # print(f"kappa = {kappa*ms.g_cm2_to_invpc}, tau_opt = {tau_opt}")
+            # print(f"rho={rho:.3e}->{rho_t:.3e}, Sigma={Sigma:.3e}->{Sigma_t:.3e}, T_mid={T_mid:.3e}->{T_mid_t:.3e}, c_s2={c_s2:.3e}->{c_s2_t:.3e}")
             return np.array([rho_t - rho, Sigma_t - Sigma, T_mid_t - T_mid,  c_s2_t - c_s2])
 
         # choose initial values
+        mach_number_0 = 60.
+        Sigma_0 = 1e5 * ms.g_cm2_to_invpc if Sigma_0 is None else Sigma_0
+        rho_0 = Sigma_0 / 2. / r * mach_number_0 if rho_0 is None else rho_0
         T_mid_0 = T_eff if T_mid_0 is None else T_mid_0
-        # c_s2_0 = np.sqrt(self.boltzmann_constant / self.hydrogen_mass / self.mean_molecular_weight * T_mid_0
-        #                      + 1./3. *self.a_rad * T_mid_0**4 / rho)  if c_s2_0 is None else c_s2_0
-        c_s2_0 = (self.boltzmann_constant / self.hydrogen_mass / self.mean_molecular_weight *T_mid_0)  if c_s2_0 is None else c_s2_0
-        c_s2_0 = np.min([c_s2_0, 1.])
-        Sigma_0 = M_dot_prime/ 3./np.pi/self.alpha/c_s2_0 * Omega if Sigma_0 is None else Sigma_0
-        rho_0 = Sigma_0/2./np.sqrt(c_s2_0)*Omega if rho_0 is None else rho_0
+        c_s2_0 = np.sqrt(self.boltzmann_constant / self.hydrogen_mass / self.mean_molecular_weight * T_mid_0
+                             +  4./3. * self.stefan_boltzmann_constant* T_mid_0**4 / rho_0)  if c_s2_0 is None else c_s2_0
+
+        # c_s2_0 = (self.boltzmann_constant / self.hydrogen_mass / self.mean_molecular_weight *T_mid_0)  if c_s2_0 is None else c_s2_0
+        # c_s2_0 = np.min([c_s2_0, 1.])
+        # Sigma_0 = M_dot_prime/ 3./np.pi/self.alpha/c_s2_0 * Omega if Sigma_0 is None else Sigma_0
+        # rho_0 = Sigma_0/2./np.sqrt(c_s2_0)*Omega if rho_0 is None else rho_0
 
         # compute solution
         x_0 = np.array([rho_0, Sigma_0, T_mid_0, c_s2_0])
-        print(x_0)
-        sol = root(f, x0 = x_0, method='lm')
-        print(sol.success, sol.message, sol.x)
+        # print(x_0)
+        sol = root(f, x0 = x_0, method='hybr', options={'xtol':1e-10})
+        # sol = root(f, x0 = x_0, method='lm')
+        # print(sol.success, sol.message, sol.x)
         rho, Sigma, T_mid, c_s2 = sol.x
 
         return rho, Sigma, T_mid, c_s2
@@ -430,7 +459,7 @@ class ShakuraSunyaevDisc(MatterHalo):
             density = np.zeros(np.shape(r))
             rho = None; Sigma = None; T_mid = None; c_s2 = None
             for i in range(len(r)):
-                rho, Sigma, T_mid, c_s2 = self.solve_eq(r[i], rho_0=rho, Sigma_0=Sigma, T_mid=T_mid, c_s2_0=c_s2)
+                rho, Sigma, T_mid, c_s2 = self.solve_eq(r[i], rho_0=rho, Sigma_0=Sigma, T_mid_0=T_mid, c_s2_0=c_s2)
                 density[i] = rho
             return density
 
@@ -459,6 +488,29 @@ class ShakuraSunyaevDisc(MatterHalo):
         return self.solve_eq(r)[1]
 
 
+    def soundspeed(self, r):
+        """
+        The soundspeed c_s of the disc
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the soundspeed
+
+        Returns:
+            out : float or array_like (depending on r)
+                The soundspeed at the radius r
+        """
+        if isinstance(r, (np.ndarray, collections.Sequence)):
+            c_s = np.zeros(np.shape(r))
+            rho = None; Sigma = None; T_mid = None; c_s2 = None
+            for i in range(len(r)):
+                rho, Sigma, T_mid, c_s2 = self.solve_eq(r[i], rho_0=rho, Sigma_0=Sigma, T_mid=T_mid, c_s2_0=c_s2)
+                c_s[i] = np.sqrt(c_s2)
+            return c_s
+
+        return np.sqrt(self.solve_eq(r)[3])
+
+
     def mach_number(self, r):
         """
         The mach number of the disc at radius r
@@ -484,6 +536,31 @@ class ShakuraSunyaevDisc(MatterHalo):
         h = Sigma/2./rho
         return r/h
 
+    def scale_height(self, r):
+        """
+        The disc scale height at radius r
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the scale height
+
+        Returns:
+            out : float or array_like (depending on r)
+                The disc scale height at the radius r
+        """
+        if isinstance(r, (np.ndarray, collections.Sequence)):
+            h = np.zeros(np.shape(r))
+            rho = None; Sigma = None; T_mid = None; c_s2 = None
+            for i in range(len(r)):
+                rho, Sigma, T_mid, c_s2 = self.solve_eq(r[i], rho_0=rho, Sigma_0=Sigma, T_mid=T_mid, c_s2_0=c_s2)
+                h[i] = Sigma/2./rho
+            return h
+
+        rho, Sigma, T_mid, c_s2 = self.solve_eq(r)
+        h = Sigma/2./rho
+        return h
+
+
     def CreateInterpolatedHalo(self, r_grid):
         """
         Creates an InterpolatedHalo object of this instance for a given r_grid
@@ -501,12 +578,15 @@ class ShakuraSunyaevDisc(MatterHalo):
         rho = None; Sigma = None; T_mid = None; c_s2 = None
         for i in range(len(r_grid)):
             rho, Sigma, T_mid, c_s2 = self.solve_eq(r_grid[i], rho_0=rho, Sigma_0=Sigma, T_mid_0=T_mid, c_s2_0=c_s2)
+            # rho, Sigma, T_mid, c_s2 = self.solve_eq(r_grid[i])
             res.append([rho, Sigma, T_mid, c_s2])
         res = np.array(res)
-        rho = res[:,0]; Sigma = res[:,1];
+        rho = res[:,0]; Sigma = res[:,1]; c_s = np.sqrt(res[:,3]);
         interpHalo = InterpolatedHalo(r_grid, rho)
         interpHalo.surface_density = interp1d(r_grid, Sigma, kind='cubic', bounds_error=False, fill_value=(0.,0.))
         interpHalo.mach_number = interp1d(r_grid, r_grid/Sigma * 2 * rho, kind='cubic', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.scale_height = interp1d(r_grid, Sigma/2./rho, kind='cubic', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.soundspeed = interp1d(r_grid, c_s, kind='cubic', bounds_error=False, fill_value=(0.,0.))
         interpHalo.alpha = self.alpha
         return interpHalo
 
