@@ -16,8 +16,7 @@ iota = 0.
 
 sp_0 = ms.SystemProp(m1, m2, halo.ConstHalo(0.), D, inclination_angle=iota, pericenter_angle=beta)
 
-inspiral.Classic.ln_Lambda=10.
-inspiral.Classic.dmPhaseSpaceFraction=1.
+ln_Lambda=10.
 rho_spike = 226 * ms.solar_mass_to_pc
 r_spike = 0.54
 e0 = 0.6
@@ -28,10 +27,12 @@ sp_1 = ms.SystemProp(m1, m2, halo.Spike(rho_spike, r_spike, 7./3.), D, inclinati
 sp_2 = ms.SystemProp(m1, m2, halo.Spike(rho_spike, r_spike, 2.),    D, inclination_angle=iota, pericenter_angle=beta)
 sp_3 = ms.SystemProp(m1, m2, halo.Spike(rho_spike, r_spike, 1.5),   D, inclination_angle=iota, pericenter_angle=beta)
 
-ev_0 = inspiral.Classic.Evolve(sp_0, a0, e0, a_fin=afin)
-ev_1 = inspiral.Classic.Evolve(sp_1, a0, e0, a_fin=afin)
-ev_2 = inspiral.Classic.Evolve(sp_2, a0, e0, a_fin=afin)
-ev_3 = inspiral.Classic.Evolve(sp_3, a0, e0, a_fin=afin)
+evOpt = inspiral.Classic.EvolutionOptions(coulombLog=ln_Lambda, accuracy=1e-10, verbose=1)
+
+ev_0 = inspiral.Classic.Evolve(sp_0, a0, e0, a_fin=afin, opt=evOpt)
+ev_1 = inspiral.Classic.Evolve(sp_1, a0, e0, a_fin=afin, opt=evOpt)
+ev_2 = inspiral.Classic.Evolve(sp_2, a0, e0, a_fin=afin, opt=evOpt)
+ev_3 = inspiral.Classic.Evolve(sp_3, a0, e0, a_fin=afin, opt=evOpt)
 
 fig, (ax_p, ax_e) = plt.subplots(2, 1, figsize=(16,20))
 ax_p.plot(ev_0.t/ms.year_to_pc, ev_0.a*(1.-ev_0.e**2)/sp_0.m1, label='0')

@@ -15,13 +15,7 @@ class Classic:
     """
     A class bundling the functions to simulate an inspiral with basic energy conservation arguments
     This class does not need to be instantiated
-
-    Attributes:
-        ln_Lambda (float): The Coulomb logarithm of the dynamical friction description. Set -1 for ln sqrt(m1/m2). Default is -1.
-        dmPhaseSpaceFraction (float) : As the dm particles in the halo are not stationary, the relative velocity effects need to be modeled, here according to https://arxiv.org/pdf/2002.12811.pdf
     """
-    ln_Lambda = -1
-    dmPhaseSpaceFraction = 1.
 
     class EvolutionOptions:
         """
@@ -54,8 +48,10 @@ class Classic:
 
         """
         def __init__(self, accuracy=1e-8, verbose=1, elliptic=True, gwEmissionLoss=True, dynamicalFrictionLoss=True, accretion=False,
-                                    accretionForceLoss=True, accretionRecoilLoss=False, accretionModel='',
-                                    baryonicHaloEffects=False, baryonicEvolutionOptions=None, haloPhaseSpaceDescription=False, **kwargs):
+                                    accretionForceLoss=True, accretionRecoilLoss=True, accretionModel='',
+                                    baryonicHaloEffects=False, baryonicEvolutionOptions=None,
+                                    haloPhaseSpaceDescription=False, dmPhaseSpaceFraction=1., coulombLog=-1.,
+                                    **kwargs):
             self.accuracy = accuracy
             self.verbose = verbose
             self.elliptic = elliptic
@@ -69,6 +65,8 @@ class Classic:
             self.baryonicEvolutionOptions = baryonicEvolutionOptions
             self.haloPhaseSpaceDescription = haloPhaseSpaceDescription
             self.additionalParameters = kwargs
+            self.ln_Lambda = coulombLog
+            self.dmPhaseSpaceFraction = dmPhaseSpaceFraction
 
             if not self.baryonicEvolutionOptions is None:
                 self.baryonicEvolutionOptions.baryonicHaloEffects = False
@@ -190,7 +188,9 @@ class Classic:
         """
         The function gives the force of the dynamical friction of an object inside a dark matter halo at radius r (since we assume a spherically symmetric halo)
             and with velocity v
-        The ln_Lambda is the Coulomb logarithm, for which different authors use different values. Set to -1 so that Lambda = sqrt(m1/m2)
+        The opt.ln_Lambda is the Coulomb logarithm, for which different authors use different values. Set to -1 so that Lambda = sqrt(m1/m2)
+        The opt.relativisticDynamicalFrictionCorrections parameter allows the use of the correction factor as given by eq (15) of
+                https://arxiv.org/pdf/2204.12508.pdf ( except for the typo in the gamma factor )
         The opt.useHaloPhaseSpaceDescription parameter allows to use not the total dark matter density at r, but uses the halo phase space description
             such that only particles below a given v_max scatter. This option requires sp.halo to be of type DynamicSS.
             v_max can be provided via opt.additionalParameters['v_max']. If v_max is None, it is taken to be the orbital velocity.
@@ -205,7 +205,7 @@ class Classic:
             out : float
                 The magnitude of the dynamical friction force
         """
-        ln_Lambda = Classic.ln_Lambda
+        ln_Lambda = opt.ln_Lambda
         if ln_Lambda < 0.:
             ln_Lambda = np.log(sp.m1/sp.m2)/2.
         relCovFactor = 1.
@@ -215,7 +215,7 @@ class Classic:
         if opt.haloPhaseSpaceDescription:
             density = sp.halo.density(r, v_max=(opt.additionalParameters['v_max'] if 'v_max' in opt.additionalParameters else v))
         else:
-            density = sp.halo.density(r) * Classic.dmPhaseSpaceFraction
+            density = sp.halo.density(r) * opt.dmPhaseSpaceFraction
 
         return 4.*np.pi * relCovFactor * sp.m2**2 * density * ln_Lambda / v**2
 

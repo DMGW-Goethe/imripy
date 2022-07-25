@@ -8,8 +8,7 @@ from imripy import inspiral
 from imripy import waveform
 from imripy import halo
 
-inspiral.Classic.ln_Lambda=3.
-inspiral.Classic.dmPhaseSpaceFraction=1.
+ln_Lambda = 3.
 
 def Meff(sp, r):
     return np.where(r > sp.r_isco(), sp.m1 - 4.*np.pi*sp.halo.rho_spike*sp.halo.r_spike**3 *sp.r_isco()**(3.-sp.halo.alpha) /(3.-sp.halo.alpha), sp.m1)
@@ -37,8 +36,8 @@ def coeffs(sp):
     alpha = sp.halo.alpha
     eps = F(sp,2.*sp.r_isco())/Meff(sp, 2.*sp.r_isco())
     c_gw = 256./5.* sp.m2 * Meff(sp, 2.*sp.r_isco())**2 * eps**(4./(3.-alpha))
-    c_df = 8.*np.pi*sp.m2 *sp.halo.rho_spike *sp.halo.r_spike**alpha * inspiral.Classic.ln_Lambda \
-            * Meff(sp, 2.*sp.r_isco())**(-3./2.)* eps**((2.*alpha-3.)/(6.-2.*alpha))
+    c_df = (8.*np.pi*sp.m2 *sp.halo.rho_spike *sp.halo.r_spike**alpha * ln_Lambda
+            * Meff(sp, 2.*sp.r_isco())**(-3./2.)* eps**((2.*alpha-3.)/(6.-2.*alpha)))
     ctild = c_df/c_gw
     return c_gw, c_df, ctild
 
@@ -56,9 +55,10 @@ def plotDiffEq(sp, r0, r1):
     x = eps**(1./(3.-alpha))*r
     c_gw, c_df, ctild = coeffs(sp)
     print("c_gw=", c_gw*ms.year_to_pc, "c_df=",c_df*ms.year_to_pc)
+    evOpt=inspiral.Classic.EvolutionOptions(coulombLog=ln_Lambda)
     l, = plt.loglog(r/sp.r_isco(), np.abs(inspiral.Classic.dE_gw_dt(sp, r))/inspiral.Classic.dE_orbit_da(sp, r), label=r'$dE_{gw}/dt / dE_{orbit}/dR$', alpha =0.5)
     plt.loglog(r/sp.r_isco(), c_gw*f_gw(x, alpha)/eps**(1./(3.-alpha)) , label='$c_{gw}f_{gw}$', color=l.get_c(), linestyle='--')
-    l, = plt.loglog(r/sp.r_isco(), np.abs(inspiral.Classic.dE_force_dt(sp, inspiral.Classic.F_df,  r))/inspiral.Classic.dE_orbit_da(sp, r), label=r'$dE_{df}/dt / dE_{orbit}/dR$', alpha = 0.5)
+    l, = plt.loglog(r/sp.r_isco(), np.abs(inspiral.Classic.dE_force_dt(sp, inspiral.Classic.F_df,  r, opt=evOpt))/inspiral.Classic.dE_orbit_da(sp, r), label=r'$dE_{df}/dt / dE_{orbit}/dR$', alpha = 0.5)
     plt.loglog(r/sp.r_isco(), c_df* f_df(x, alpha)/eps**(1./(3.-alpha)), label='$c_{df}f_{df}$', color=l.get_c(), linestyle='--')
     plt.xlabel('$r/r_{ISCO}$')
 
@@ -74,8 +74,8 @@ def plotPhiprimeprime(sp, r0, r1):
     eps = F(sp,2.*sp.r_isco())/Meff(sp, 2.*sp.r_isco())
     x = eps**(1./(3.-alpha))*r
     c_gw, c_df, ctild = coeffs(sp)
-
-    plt.loglog(r/sp.r_isco(), (sp.mass(r)/r**3 )**(-1./2.) * (-3.*sp.mass(r)/r**4 + 4.*np.pi *sp.halo.density(r)/r )* inspiral.Classic.da_dt(sp, r), label=r'$\ddot{\Phi}^{code}$')
+    evOpt=inspiral.Classic.EvolutionOptions(coulombLog=ln_Lambda)
+    plt.loglog(r/sp.r_isco(), (sp.mass(r)/r**3 )**(-1./2.) * (-3.*sp.mass(r)/r**4 + 4.*np.pi *sp.halo.density(r)/r )* inspiral.Classic.da_dt(sp, r, opt=evOpt), label=r'$\ddot{\Phi}^{code}$')
     plt.loglog(r/sp.r_isco(), Meff(sp, 2.*sp.r_isco())**(1./2.) * eps**(3./2./(3.-alpha)) \
                     * c_gw*(1.+ctild*J(x, alpha)) *3./4.* K(x,alpha) * x**(-11./2.), label=r'$\ddot{\Phi}^{paper}$', linestyle='--')
     plt.xlabel(r'$r/r_{ISCO}$')
@@ -158,6 +158,8 @@ m1 = 1e3 *ms.solar_mass_to_pc
 m2 = 1. * ms.solar_mass_to_pc
 D = 1e3
 sp_1 = ms.SystemProp(m1, m2, halo.Spike( 226.*ms.solar_mass_to_pc, 0.54, 7./3.), D, includeHaloInTotalMass=True)
+evOpt=inspiral.Classic.EvolutionOptions(accuracy=1e-12, coulombLog=ln_Lambda)
+print(evOpt)
 
 plotHalo(sp_1, 4./6.*sp_1.r_isco(), 1e4)
 plt.legend(); plt.grid()
@@ -175,7 +177,7 @@ plotPhiprimeprime(sp_1, sp_1.r_isco(), 1e5*sp_1.r_isco())
 plt.legend(); plt.grid()
 
 R0 = 80.*sp_1.r_isco()
-ev = inspiral.Classic.Evolve(sp_1, R0, a_fin=sp_1.r_isco(), opt=inspiral.Classic.EvolutionOptions(accuracy=1e-12))
+ev = inspiral.Classic.Evolve(sp_1, R0, a_fin=sp_1.r_isco(), opt=evOpt)
 omega_s = sp_1.omega_s(ev.R)
 
 plt.figure()

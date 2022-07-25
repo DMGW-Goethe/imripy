@@ -9,8 +9,7 @@ from imripy import inspiral
 from imripy import waveform
 
 
-inspiral.Classic.ln_Lambda=3.
-inspiral.Classic.dmPhaseSpaceFraction=1.
+ln_Lambda=3.
 
 def Meff(sp, r=None):
     """
@@ -50,7 +49,7 @@ def b_A(sp, x, alpha):
     eps = F(sp)/Meff(sp)
     r = x/eps**(1./(3.-alpha))
     omega_s = np.sqrt(Meff(sp, r)/r**3 + F(sp, r)/r**(sp.halo.alpha))
-    return 4. * r**2 * omega_s**2 / inspiral.Classic.ln_Lambda  * (1. + r**2 * omega_s**2)
+    return 4. * r**2 * omega_s**2 / ln_Lambda  * (1. + r**2 * omega_s**2)
 
 def f_gw(x, alpha):
     """
@@ -76,7 +75,7 @@ def plotDiffEq(sp, r0, r1):
     print(c_gw*ms.year_to_pc, c_df*ms.year_to_pc)
     l, = plt.loglog(r/sp.r_isco(), np.abs(inspiral.Classic.dE_gw_dt(sp, r))/inspiral.Classic.dE_orbit_da(sp, r), label=r'$dE_{gw}/dt / dE_{orbit}/dR$', alpha=0.5)
     plt.loglog(r/sp.r_isco(), c_gw*f_gw(x, alpha)/eps**(1./(3.-alpha)) , label='$c_{gw}f_{gw}$', color=l.get_c(), linestyle='--')
-    l, = plt.loglog(r/sp.r_isco(), np.abs(inspiral.Classic.dE_force_dt(sp, inspiral.Classic.F_df, r))/inspiral.Classic.dE_orbit_da(sp, r), label=r'$dE_{df}/dt / dE_{orbit}/dR$', alpha=0.5)
+    l, = plt.loglog(r/sp.r_isco(), np.abs(inspiral.Classic.dE_force_dt(sp, inspiral.Classic.F_df, r, opt=inspiral.Classic.EvolutionOptions(coulombLog=3.)))/inspiral.Classic.dE_orbit_da(sp, r), label=r'$dE_{df}/dt / dE_{orbit}/dR$', alpha=0.5)
     plt.loglog(r/sp.r_isco(), c_df* f_df(x, alpha)/eps**(1./(3.-alpha)), label='$c_{df}f_{df}$' , color=l.get_c(), linestyle='--')
     l, = plt.loglog(r/sp.r_isco(), np.abs(inspiral.Classic.dE_force_dt(sp, inspiral.Classic.F_acc, r))/inspiral.Classic.dE_orbit_da(sp, r), label=r'$dE_{acc}/dt / dE_{orbit}/dR$', alpha=0.5)
     plt.loglog(r/sp.r_isco(), c_df* f_df(x, alpha)*b_A(sp, x, alpha)/eps**(1./(3.-alpha)), label='$c_{df}f_{df}b_A$' , color=l.get_c(), linestyle='--')
@@ -103,12 +102,13 @@ def plotPhiprimeprime(sp, r0, r1):
     eps = F(sp)/Meff(sp)
     x = eps**(1./(3.-alpha))*r
     c_gw, c_df, ctild = coeffs(sp)
+    evOpt=inspiral.Classic.EvolutionOptions(coulombLog=ln_Lambda)
 
     Phipp_ana = Meff(sp)**(1./2.) * eps**(3./2./(3.-alpha)) * c_gw*(1.+ctild*J(x, alpha)*(1.+b_A(sp, x, alpha))) *3./4.* K(x,alpha) * x**(-11./2.)
     plt.loglog(r/sp.r_isco(), Phipp_ana, label=r'$\ddot{\Phi}^{paper}$' )
     #plt.loglog(r/sp.r_isco(), Meff(sp)**(1./2.) * eps**(3./2./(3.-alpha)) \
     #                * (c_gw*f_gw(x, alpha) + c_df*f_df(x, alpha)) * (3. + alpha*x**(3.-alpha))/(x**(5./2.) * (1.+ x**(3.-alpha))**(1./2.) ), label=r'$\ddot{\Phi}^{paper,ref}$' )
-    Phipp = (sp.mass(r)/r**3 )**(-1./2.) * (-3.*sp.mass(r)/r**4 + 4.*np.pi *sp.halo.density(r)/r )* inspiral.Classic.da_dt(sp, r)
+    Phipp = (sp.mass(r)/r**3 )**(-1./2.) * (-3.*sp.mass(r)/r**4 + 4.*np.pi *sp.halo.density(r)/r )* inspiral.Classic.da_dt(sp, r, opt=evOpt)
     plt.loglog(r/sp.r_isco(), Phipp, label=r'$\ddot{\Phi}^{code}$', linestyle='--')
 
     plt.loglog(r/sp.r_isco(), np.abs(Phipp - Phipp_ana), label=r'$\Delta \ddot{\Phi}$')
@@ -121,10 +121,10 @@ def L(sp, f, accretion=True):
         If accretion=False, then L' as given by eq (58)
     """
     alpha = sp.halo.alpha
-    c_eps = 5.*np.pi/32. * Meff(sp)**(-(alpha+5.)/3.) * sp.halo.rho_spike * sp.halo.r_spike**(alpha) * inspiral.Classic.ln_Lambda
+    c_eps = 5.*np.pi/32. * Meff(sp)**(-(alpha+5.)/3.) * sp.halo.rho_spike * sp.halo.r_spike**(alpha) * ln_Lambda
     if accretion:
         # TODO: Check prefactor, it's in (36) but not (51)
-        b_eps = 4.*(np.pi*f * Meff(sp))**(2./3.) / inspiral.Classic.ln_Lambda * (1. + (np.pi*f * Meff(sp))**(2./3.))
+        b_eps = 4.*(np.pi*f * Meff(sp))**(2./3.) / ln_Lambda * (1. + (np.pi*f * Meff(sp))**(2./3.))
     else:
         b_eps = 0.
     deltatild = (1./np.pi**2 / f**2)**(1.-alpha/3.)
@@ -286,10 +286,9 @@ plt.figure()
 plotPhiprimeprime(sp_1, sp_1.r_isco(), 1e5*sp_1.r_isco())
 plt.legend(); plt.grid()
 
-
 R0 = 100.*sp_1.r_isco()
-ev_nacc = inspiral.Classic.Evolve(sp_1, R0, a_fin=sp_1.r_isco(), opt=inspiral.Classic.EvolutionOptions(accuracy=1e-13, accretion=False, verbose=1))
-ev_acc = inspiral.Classic.Evolve(sp_1, R0, a_fin=sp_1.r_isco(), opt=inspiral.Classic.EvolutionOptions(accuracy=1e-13, accretion=True, accretionRecoilLoss=False, verbose=1))
+ev_nacc = inspiral.Classic.Evolve(sp_1, R0, a_fin=sp_1.r_isco(), opt=inspiral.Classic.EvolutionOptions(accuracy=1e-13, accretion=False, coulombLog=ln_Lambda, verbose=1))
+ev_acc = inspiral.Classic.Evolve(sp_1, R0, a_fin=sp_1.r_isco(), opt=inspiral.Classic.EvolutionOptions(accuracy=1e-13, accretion=True, accretionRecoilLoss=False, coulombLog=ln_Lambda, verbose=1))
 
 plt.figure()
 plotPhase(sp_1, ev_acc, ev_nacc, f_c = 0.1*ms.hz_to_invpc)
