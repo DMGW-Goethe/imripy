@@ -368,12 +368,23 @@ class Classic:
             out : float
                 The magnitude of the force through gas interactions
         """
-        if opt.additionalParameters['gasInteraction'] == 'gasTorqueLoss':
+        if opt.additionalParameters['gasInteraction'] == 'gasTorqueLossTypeI':
             mach_number = sp.halo.mach_number(r)
             Sigma = sp.halo.surface_density(r)
-            alpha = sp.halo.alpha  # requires ShakuraSunyaevDisc atm
             Omega = sp.omega_s(r)
-            # Gamma_lin = Sigma*r**4 * Omega**2 * (sp.m2/sp.m1)**2 * mach_number**2
+            Gamma_lin = Sigma*r**4 * Omega**2 * (sp.m2/sp.m1)**2 * mach_number**2
+
+            F_gas = Gamma_lin * sp.m2/sp.m1 / r
+
+        elif opt.additionalParameters['gasInteraction'] == 'gasTorqueLossTypeII':
+            mach_number = sp.halo.mach_number(r)
+            Sigma = sp.halo.surface_density(r)
+            if hasattr(sp.halo, 'alpha'):
+                alpha = sp.halo.alpha  # requires ShakuraSunyaevDisc atm
+            else:
+                alpha = opt.additionalParameters['gasTorqueAlpha'] if 'gasTorqueAlpha' in opt.additionalParameters else 0.1
+
+            Omega = sp.omega_s(r)
             Gamma_vis = 3.*np.pi * alpha * Sigma * r**4 * Omega**2 / mach_number**2 if mach_number > 0. else 0.
 
             fudge_factor = opt.additionalParameters['gasTorqueFudgeFactor'] if 'gasTorqueFudgeFactor' in opt.additionalParameters else 1.
