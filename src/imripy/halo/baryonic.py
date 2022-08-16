@@ -289,12 +289,274 @@ class BaryonicDisc(MatterHalo):
     def soundspeed(self, r):
         pass
 
+    def mass(self, r, **kwargs):
+        """
+        The mass that is contained in the disc in a circular shell of size r.
+        This function numerically integrates over the density function, so that it can be used
+            in inherited classes that have not implemented an analytic expression for the mass.
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the mass
+
+        Returns:
+            out : float or np.ndarray (depending on r)
+                The mass inside the disc of size r
+        """
+        integrand = lambda r, m: self.surface_density(r, **kwargs)*r
+        if isinstance(r, (collections.Sequence, np.ndarray)):
+            return 2.*np.pi*odeint(integrand, quad(integrand, 0., r[0], args=(0.))[0], r, tfirst=True, rtol=1e-10, atol=1e-10)[:,0]
+        else:
+            return 2.*np.pi*quad(integrand, 0., r, args=(0.))[0]
+
+    def __str__(self):
+        """
+        Gives the string representation of the object
+
+        Returns:
+            out : string
+                The string representation
+        """
+        return "BaryonicDisc"
+
+
+class AlphaDisc(BaryonicDisc):
+    """
+    The class describing a baryonic accretion disc as introduced by Shakura & Sunyaev
+        with the alpha disc parametrization as explained in https://arxiv.org/pdf/2207.10086.pdf
+
+    Attributes:
+        r_min (float): An minimum radius below which the density is always 0
+
+        # These are the model parameters
+        M     (float) : The mass of the central black hole
+        alpha (float) : The viscosity parameter
+        f_edd (flaot) : The Eddington accretion rate fraction
+        eps   (float) : mass-energy conversion efficiency
+            (technically we don't need both of these parameters, this is just for convenience)
+    """
+
+    def __init__(self, M, alpha, f_edd, eps):
+        """
+        The constructor for the AlphaDisc class.
+
+        Parameters:
+            M : float
+                The mass of the central black hole
+            alpha : float
+                The viscosity coeffcient
+            f_edd : float
+                The Eddintion accretion rate fraction
+            eps   : float
+                The mass-energy conversion efficiency
+        """
+        super().__init__()
+        self.M = M
+        self.alpha = alpha
+        self.f_edd = f_edd
+        self.eps = eps
+
+    def surface_density(self, r):
+        """
+        The surface density function of the disc
+            as given by eq (2.1) of https://arxiv.org/pdf/2207.10086.pdf
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the density
+
+        Returns:
+            out : float or array_like (depending on r)
+                The surface density at the radius r
+        """
+        # convert kg/m^2 to invpc
+        return 5.4e3 * 0.1*ms.g_cm2_to_invpc / (self.alpha/0.1) / (self.f_edd / 0.1 * 0.1 / self.eps) * (r/self.M)**(3./2.)
+
+    def scale_height(self, r):
+        """
+        The disc scale height at radius r
+            as given by eq (2.1) of https://arxiv.org/pdf/2207.10086.pdf
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the scale height
+
+        Returns:
+            out : float or array_like (depending on r)
+                The disc scale height at the radius r
+        """
+        return 1.5 * (self.f_edd/0.1 * 0.1 / self.eps) * self.M * np.ones(np.shape(r))
+
+    def density(self, r):
+        """
+        The density function of the disc
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the density
+
+        Returns:
+            out : float or array_like (depending on r)
+                The density at the radius r
+        """
+        return self.surface_density(r) / 2. / self.scale_height(r)
+
+    def soundspeed(self, r):
+        """
+        The soundspeed c_s of the disc
+            as given by eq (A6) of https://arxiv.org/pdf/2206.05292.pdf
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the soundspeed
+
+        Returns:
+            out : float or array_like (depending on r)
+                The soundspeed at the radius r
+        """
+        Omega = np.sqrt(self.M/r**3)
+        return self.scale_height(r) * Omega
+
+    def mach_number(self, r):
+        """
+        The mach number of the disc at radius r
+            as given below eq (A7) of https://arxiv.org/pdf/2206.05292.pdf
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the mach number
+
+        Returns:
+            out : float or array_like (depending on r)
+                The mach number at the radius r
+        """
+        return r / self.scale_height(r)
+
+    def __str__(self):
+        return f"AlphaDisc (M = {self.M}, alpha={self.alpha}, f_edd/eps={self.f_edd/self.eps})"
+
+
+class BetaDisc(BaryonicDisc):
+    """
+    The class describing a baryonic accretion disc as introduced by Shakura & Sunyaev
+        with the beta disc parametrization as explained in https://arxiv.org/pdf/2207.10086.pdf
+
+    Attributes:
+        r_min (float): An minimum radius below which the density is always 0
+
+        # These are the model parameters
+        M     (float) : The mass of the central black hole
+        alpha (float) : The viscosity parameter
+        f_edd (flaot) : The Eddington accretion rate fraction
+        eps   (float) : mass-energy conversion efficiency
+            (technically we don't need both of these parameters, this is just for convenience)
+    """
+
+    def __init__(self, M, alpha, f_edd, eps):
+        """
+        The constructor for the BetaDisc class.
+
+        Parameters:
+            M : float
+                The mass of the central black hole
+            alpha : float
+                The viscosity coeffcient
+            f_edd : float
+                The Eddintion accretion rate fraction
+            eps   : float
+                The mass-energy conversion efficiency
+        """
+        super().__init__()
+        self.M = M
+        self.alpha = alpha
+        self.f_edd = f_edd
+        self.eps = eps
+
+    def surface_density(self, r):
+        """
+        The surface density function of the disc
+            as given by eq (2.1) of https://arxiv.org/pdf/2207.10086.pdf
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the density
+
+        Returns:
+            out : float or array_like (depending on r)
+                The surface density at the radius r
+        """
+        # convert kg/m^2 to invpc
+        return (2.1e7 * 0.1*ms.g_cm2_to_invpc * (self.alpha/0.1)**(-4./5.) * (self.f_edd/self.eps)**(3./5.)
+                * (self.M / 1e6 / ms.solar_mass_to_pc)**(1./5.) * (r / 10./self.M)**(-3./5.))
+
+    def scale_height(self, r):
+        """
+        The disc scale height at radius r
+            as given by eq (2.1) of https://arxiv.org/pdf/2207.10086.pdf
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the scale height
+
+        Returns:
+            out : float or array_like (depending on r)
+                The disc scale height at the radius r
+        """
+        return 1.5 * (self.f_edd/0.1 * 0.1 / self.eps) * self.M* np.ones(np.shape(r))
+
+    def density(self, r):
+        """
+        The density function of the disc
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the density
+
+        Returns:
+            out : float or array_like (depending on r)
+                The density at the radius r
+        """
+        return self.surface_density(r) / 2. / self.scale_height(r)
+
+    def soundspeed(self, r):
+        """
+        The soundspeed c_s of the disc
+            as given by eq (A6) of https://arxiv.org/pdf/2206.05292.pdf
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the soundspeed
+
+        Returns:
+            out : float or array_like (depending on r)
+                The soundspeed at the radius r
+        """
+        Omega = np.sqrt(self.M/r**3)
+        return self.scale_height(r) * Omega
+
+    def mach_number(self, r):
+        """
+        The mach number of the disc at radius r
+            as given below eq (A7) of https://arxiv.org/pdf/2206.05292.pdf
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the mach number
+
+        Returns:
+            out : float or array_like (depending on r)
+                The mach number at the radius r
+        """
+        return r / self.scale_height(r)
+
+    def __str__(self):
+        return f"BetaDisc (M = {self.M}, alpha={self.alpha}, f_edd/eps={self.f_edd/self.eps})"
 
 
 class ShakuraSunyaevDisc(BaryonicDisc):
     """
     The class describing a baryonic accretion disc as introduced by Shakura & Sunyaev
-        as given by the equations of appendix A of https://arxiv.org/pdf/2206.05292.pdf
+        with viscosity and opacity descriptions as given by the equations of appendix A of https://arxiv.org/pdf/2206.05292.pdf
 
     Attributes:
         r_min (float): An minimum radius below which the density is always 0
@@ -481,7 +743,7 @@ class ShakuraSunyaevDisc(BaryonicDisc):
             surface_density = np.zeros(np.shape(r))
             rho = None; Sigma = None; T_mid = None; c_s2 = None
             for i in range(len(r)):
-                rho, Sigma, T_mid, c_s2 = self.solve_eq(r[i], rho_0=rho, Sigma_0=Sigma, T_mid=T_mid, c_s2_0=c_s2)
+                rho, Sigma, T_mid, c_s2 = self.solve_eq(r[i], rho_0=rho, Sigma_0=Sigma, T_mid_0=T_mid, c_s2_0=c_s2)
                 surface_density[i] = Sigma
             return surface_density
 
@@ -504,7 +766,7 @@ class ShakuraSunyaevDisc(BaryonicDisc):
             c_s = np.zeros(np.shape(r))
             rho = None; Sigma = None; T_mid = None; c_s2 = None
             for i in range(len(r)):
-                rho, Sigma, T_mid, c_s2 = self.solve_eq(r[i], rho_0=rho, Sigma_0=Sigma, T_mid=T_mid, c_s2_0=c_s2)
+                rho, Sigma, T_mid, c_s2 = self.solve_eq(r[i], rho_0=rho, Sigma_0=Sigma, T_mid_0=T_mid, c_s2_0=c_s2)
                 c_s[i] = np.sqrt(c_s2)
             return c_s
 
@@ -517,7 +779,7 @@ class ShakuraSunyaevDisc(BaryonicDisc):
 
         Parameters:
             r : float or array_like
-                The radius at which to evaluate the density
+                The radius at which to evaluate the mach number
 
         Returns:
             out : float or array_like (depending on r)
@@ -527,7 +789,7 @@ class ShakuraSunyaevDisc(BaryonicDisc):
             mach_number = np.zeros(np.shape(r))
             rho = None; Sigma = None; T_mid = None; c_s2 = None
             for i in range(len(r)):
-                rho, Sigma, T_mid, c_s2 = self.solve_eq(r[i], rho_0=rho, Sigma_0=Sigma, T_mid=T_mid, c_s2_0=c_s2)
+                rho, Sigma, T_mid, c_s2 = self.solve_eq(r[i], rho_0=rho, Sigma_0=Sigma, T_mid_0=T_mid, c_s2_0=c_s2)
                 h = Sigma/2./rho
                 mach_number[i] = r[i]/h
             return mach_number
@@ -552,7 +814,7 @@ class ShakuraSunyaevDisc(BaryonicDisc):
             h = np.zeros(np.shape(r))
             rho = None; Sigma = None; T_mid = None; c_s2 = None
             for i in range(len(r)):
-                rho, Sigma, T_mid, c_s2 = self.solve_eq(r[i], rho_0=rho, Sigma_0=Sigma, T_mid=T_mid, c_s2_0=c_s2)
+                rho, Sigma, T_mid, c_s2 = self.solve_eq(r[i], rho_0=rho, Sigma_0=Sigma, T_mid_0=T_mid, c_s2_0=c_s2)
                 h[i] = Sigma/2./rho
             return h
 
@@ -587,6 +849,7 @@ class ShakuraSunyaevDisc(BaryonicDisc):
         interpHalo.mach_number = interp1d(r_grid, r_grid/Sigma * 2 * rho, kind='cubic', bounds_error=False, fill_value=(0.,0.))
         interpHalo.scale_height = interp1d(r_grid, Sigma/2./rho, kind='cubic', bounds_error=False, fill_value=(0.,0.))
         interpHalo.soundspeed = interp1d(r_grid, c_s, kind='cubic', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.mass = interp1d(r_grid, BaryonicDisc.mass(interpHalo, r_grid), kind='cubic', bounds_error=False, fill_value=(0.,0.))
         interpHalo.alpha = self.alpha
         return interpHalo
 
