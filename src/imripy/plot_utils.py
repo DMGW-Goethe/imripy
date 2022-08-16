@@ -7,7 +7,7 @@ from scipy.interpolate import interp1d
 from imripy import halo, inspiral, waveform
 from imripy import merger_system as ms
 
-def plotEvolution(sp, ev, ax_a=None, ax_e=None, label="", ax_ae=None, ax_m=None, m2=1.):
+def plotEvolution(sp, ev, ax_a=None, ax_e=None, label="", ax_ae=None, ax_m=None, m2=1., color=None, linestyle=None):
     """
     Plots the evolution of the system in the natural units that are used throughout the code.
     The evolution can be plotted as semimajor axis / time, eccentricity / time, eccentricity / semimajor axis, or relative mass/time,
@@ -23,20 +23,24 @@ def plotEvolution(sp, ev, ax_a=None, ax_e=None, label="", ax_ae=None, ax_m=None,
         ax_m (plt.axes)     (optional)  : The axes on which to plot relative mass / time
         m2   (float)        (optional)  : The initial mass of the system
         label (string)      (optional)  : The label corresponding to the lines
+        **kwargs                        : Other parameters that can be passed to the plotting
 
     Returns:
         out : matplotlib.lines.Line2D
             The last line object plotted
     """
-    l = None
     if not ax_a is None:
-        l, = ax_a.loglog(ev.t/ms.year_to_pc, ev.a/sp.r_isco(), label=label)
+        l, = ax_a.loglog(ev.t/ms.year_to_pc, ev.a/sp.r_isco(), label=label, color=color, linestyle=linestyle)
+        color = l.get_c()
     if not ax_e is None:
-        l, = ax_e.loglog(ev.t/ms.year_to_pc, ev.e, color=(l.get_c() if not l is None else None), label=label)
+        l, = ax_e.loglog(ev.t/ms.year_to_pc, ev.e, color=color, label=label, linestyle=linestyle)
+        color = l.get_c()
     if not ax_m is None:
-        l, = ax_m.loglog(ev.t/ms.year_to_pc, ev.m2/m2-1., linestyle='--', color=(l.get_c() if not l is None else None), label=label)
+        l, = ax_m.loglog(ev.t/ms.year_to_pc, ev.m2/m2-1., color=color, label=label, linestyle=(linestyle if not linestyle is None else ':'))
+        color = l.get_c()
     if not ax_ae is None:
-        l, = ax_ae.plot(ev.a/sp.r_isco(), ev.e, color=(l.get_c() if not l is None else None), label=label)
+        l, = ax_ae.plot(ev.a/sp.r_isco(), ev.e, color=color, label=label, linestyle=linestyle)
+        color = l.get_c()
     return l
 
 def plotGWcharacteristicStrain(sp, ev, ax_h, label="", acc=1e-13, harmonics=[2], color=None, **kwargs):
