@@ -748,15 +748,29 @@ class HaloFeedback:
                 This requires the SystemProp.halo to be of type DynamicSS
 
         """
-        def __init__(self, accuracy=1e-8, verbose=1, gwEmissionLoss=True, dynamicalFrictionLoss=True ):
+        def __init__(self, accuracy=1e-8, verbose=1, gwEmissionLoss=True, dynamicalFrictionLoss=True,
+                            baryonicHaloEffects=False, baryonicEvolutionOptions=None,
+                            coulombLog=-1, **kwargs):
             self.accuracy = accuracy
             self.verbose = verbose
             self.gwEmissionLoss = gwEmissionLoss
             self.dynamicalFrictionLoss = dynamicalFrictionLoss
             # included for compatibility purposes
             self.accretion = False
+            self.accretionForceLoss = False
+            self.accretionRecoilLoss = False
             self.haloPhaseSpaceDescription = True
             self.elliptic = False
+            self.baryonicHaloEffects = baryonicHaloEffects
+            self.baryonicEvolutionOptions = baryonicEvolutionOptions
+            self.additionalParameters = kwargs
+            self.ln_Lambda = coulombLog
+            self.dmPhaseSpaceFraction = 1.
+
+            if not self.baryonicEvolutionOptions is None:
+                self.baryonicEvolutionOptions.baryonicHaloEffects = False
+                self.baryonicEvolutionOptions.baryonicEvolutionOptions = None
+                self.baryonicEvolutionOptions.gwEmissionLoss = False
 
     def __init__(self, sp, options=EvolutionOptions()):
         """
@@ -822,7 +836,7 @@ class HaloFeedback:
         n_per_decade = self.m_grid_density
 
         if len(self.m_grid) == 0:   # if the grid is empty it needs to be initialized
-            self.m_grid = np.append(0., np.geomspace(1e-5, max(1.001*np.max(m), 100.), n_per_decade * 7 * max(int(np.log10(np.max(m))), 1)))
+            self.m_grid = np.append(0., np.geomspace(1e-5, max(1.001*np.max(m), 1000.), n_per_decade * 8 * max(int(np.log10(np.max(m))), 1)))
             self.phi_grid =  np.append(0., np.geomspace( 1e-5, 1.001*np.pi/2., 6*n_per_decade))
             mphi_grid = np.array(np.meshgrid(self.m_grid, self.phi_grid)).T.reshape(-1,2)
             self.ell_grid = HaloFeedback.elliptic_function(mphi_grid[:,0], mphi_grid[:,1])
@@ -1020,10 +1034,9 @@ class HaloFeedback:
             out : float
                 The secular time derivative of the semimajor axis
         """
-        dE_gw_dt = Classic.dE_gw_dt(sp, R) if self.options.gwEmissionLoss else 0.
-        opt = Classic.EvolutionOptions(haloPhaseSpaceDescription=True, v_max=v_cut)
-        dE_df_dt = Classic.dE_force_dt(sp, Classic.F_df, R, e=0., opt=opt)
-        return (dE_gw_dt + dE_df_dt)/ Classic.dE_orbit_da(sp, R)
+        self.options.v_max = v_cut
+        dE_dt = Classic.dE_dt(sp, R, e=0., opt=self.options)
+        return (dE_dt)/ Classic.dE_orbit_da(sp, R)
 
     class EvolutionResults:
         """
