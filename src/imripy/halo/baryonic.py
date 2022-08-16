@@ -582,13 +582,17 @@ class ShakuraSunyaevDisc(BaryonicDisc):
             res.append([rho, Sigma, T_mid, c_s2])
         res = np.array(res)
         rho = res[:,0]; Sigma = res[:,1]; c_s = np.sqrt(res[:,3]);
-        interpHalo = InterpolatedHalo(r_grid, rho)
+        interpHalo = InterpolatedHalo(r_grid, rho, name=str(self))
         interpHalo.surface_density = interp1d(r_grid, Sigma, kind='cubic', bounds_error=False, fill_value=(0.,0.))
         interpHalo.mach_number = interp1d(r_grid, r_grid/Sigma * 2 * rho, kind='cubic', bounds_error=False, fill_value=(0.,0.))
         interpHalo.scale_height = interp1d(r_grid, Sigma/2./rho, kind='cubic', bounds_error=False, fill_value=(0.,0.))
         interpHalo.soundspeed = interp1d(r_grid, c_s, kind='cubic', bounds_error=False, fill_value=(0.,0.))
         interpHalo.alpha = self.alpha
         return interpHalo
+
+
+    def __str__(self):
+        return f"ShakuraSunyaevDisc (M = {self.M}, M_dot={self.M_dot}, alpha={self.alpha})"
 
 
 

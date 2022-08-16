@@ -97,7 +97,7 @@ class NFW(MatterHalo):
             out : string
                 The string representation
         """
-        return "NFW"
+        return f"NFW(rho_s={self.rho_s:0.1e}, r_s={self.r_s:0.1e})"
 
 class Spike(MatterHalo):
     """
@@ -213,7 +213,7 @@ class Spike(MatterHalo):
             out : string
                 The string representation
         """
-        return "Spike"
+        return f"Spike(rho_spike={self.rho_spike:0.1e}, r_spike={self.r_spike:0.1e}, alpha={self.alpha:0.1e})"
 
 class SpikedNFW(NFW, Spike):
     """
@@ -315,7 +315,8 @@ class SpikedNFW(NFW, Spike):
             out : string
                 The string representation
         """
-        return "SpikedNFW"
+        return f"SpikedNFW(rho_s={self.rho_s:0.1e}, r_s={self.r_s}, r_spike={self.r_spike:0.1e}, alpha={self.alpha:0.1e})"
+
 
 class Hernquist(MatterHalo):
     """
@@ -384,5 +385,5 @@ class Hernquist(MatterHalo):
             out : string
                 The string representation
         """
-        return "Hernquist"
+        return f"Hernquist(rho_s={self.rho_s:0.1e}, r_s={self.r_s:0.1e})"
 

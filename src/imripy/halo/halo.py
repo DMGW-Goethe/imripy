@@ -137,9 +137,10 @@ class InterpolatedHalo(MatterHalo):
         r_min (float): An minimum radius below which the density is always 0, this is initialized to 0
         r_grid (array_like) : The grid in radii
         density_grid (array_like) : The corresponding densities
+        name   (string)     : The name of the halo being interpolated
     """
 
-    def __init__(self, r_grid, density_grid):
+    def __init__(self, r_grid, density_grid, name=""):
         """
         The constructor for the ConstHalo class
 
@@ -148,10 +149,13 @@ class InterpolatedHalo(MatterHalo):
                 The grid of radii
             density_grid : array_like
                 The corresponding grid
+            name : string  (optional)
+                The name of the halo being interpolated
         """
         MatterHalo.__init__(self)
         self.r_grid = r_grid
         self.density_grid = density_grid
+        self.name = name
 
     def density(self, r):
         """
@@ -177,7 +181,7 @@ class InterpolatedHalo(MatterHalo):
             out : string
                 The string representation
         """
-        return "InterpolatedHalo"
+        return "InterpolatedHalo" + ( (" (" + self.name + ")") if len(self.name) > 0 else "")
 
 
 
