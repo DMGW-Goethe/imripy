@@ -614,7 +614,7 @@ class Classic:
             self.t = t
             self.a = a
             if not options.elliptic:
-                self.e = 0.
+                self.e = np.zeros(np.shape(t))
                 self.R = a
 
 
@@ -1069,7 +1069,14 @@ class HaloFeedback:
             self.a = R
             self.f = f
             self.m2 = sp.m2
-            self.e = 0
+            self.e = np.zeros(np.shape(t))
+
+        def save(self, filename):
+            np.savez(filename, t=self.t, R=self.R, f=self.f)
+
+        def load(filename, sp, options):
+            npzf = np.load(filename)
+            return HaloFeedback.EvolutionResults(sp, options, npzf['t'], npzf['R'], npzf['f'])
 
     def Evolve(self, R_0, R_fin=0., t_0=0., t_fin=None):
         """
