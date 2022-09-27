@@ -217,3 +217,25 @@ def N_cycles_n(n, sp, ev, acc=1e-13):
     N -= N[-1]
     return n*F, N
 
+
+def BrakingIndex(sp, ev, acc=1e-13):
+    """
+    Calculates the braking index as originally defined by the spindown of neutron stars (see eq (4) of https://arxiv.org/pdf/2209.10981.pdf)
+        as f * f'' / (f')^2
+        where ' denotes the temporal derivative
+
+    Parameters:
+        sp (merger_system.SystemProp)   : The object describing the properties of the inspiralling system
+        ev (inspiral.Classic.Evolution) : The evolution object that results from the inspiral modeling
+        acc    (float)  : An accuracy parameter that is passed to the integration function
+
+    Returns:
+        F : np.ndarray
+            The frequencies of the lowest harmonic
+        n : np.ndarray
+            The braking index
+    """
+    F = np.sqrt(sp.m_total(ev.a)/ev.a**3) / 2./np.pi
+    dF = np.gradient(F, ev.t)
+    ddF = np.gradient(dF, ev.t)
+    return F, F*ddF/ dF**2
