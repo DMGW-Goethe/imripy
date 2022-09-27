@@ -198,7 +198,7 @@ class Classic:
         Parameters:
             sp (SystemProp) : The object describing the properties of the inspiralling system
             r  (float)      : The radius of the orbiting object
-            v  (float)      : The speed of the orbiting object wrt to the dark matter halo
+            v  (float or tuple)   : The speed of the orbiting object, either as |v|, or (v_r, v_theta) split into the direction of r, theta
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
@@ -206,18 +206,23 @@ class Classic:
                 The magnitude of the dynamical friction force
         """
         ln_Lambda = opt.ln_Lambda
+        v_gas = sp.halo.velocity(r)
+        v_rel = ( Classic.get_relative_velocity(v, v_gas) if ('considerRelativeVelocities' in opt.additionalParameters and opt.additionalParameters['considerRelativeVelocities'])
+                        else Classic.get_relative_velocity(v, 0.) )
+        #print(v, v_gas, v_rel)
+
         if ln_Lambda < 0.:
             ln_Lambda = np.log(sp.m1/sp.m2)/2.
         relCovFactor = 1.
         if 'relativisticDynamicalFrictionCorrections' in opt.additionalParameters and opt.additionalParameters['relativisticDynamicalFrictionCorrections']:
-            relCovFactor = (1. + v**2)**2 / (1. - v**2)
+            relCovFactor = (1. + v_rel**2)**2 / (1. - v_rel**2)
 
         if opt.haloPhaseSpaceDescription:
-            density = sp.halo.density(r, v_max=(opt.additionalParameters['v_max'] if 'v_max' in opt.additionalParameters else v))
+            density = sp.halo.density(r, v_max=(opt.additionalParameters['v_max'] if 'v_max' in opt.additionalParameters else v_rel))
         else:
             density = sp.halo.density(r) * opt.dmPhaseSpaceFraction
 
-        return 4.*np.pi * relCovFactor * sp.m2**2 * density * ln_Lambda / v**2
+        return 4.*np.pi * relCovFactor * sp.m2**2 * density * ln_Lambda / v_rel**2
 
 
     def BH_cross_section(sp, r, v, opt=EvolutionOptions()):
@@ -261,14 +266,18 @@ class Classic:
         Parameters:
             sp (SystemProp) : The object describing the properties of the inspiralling system
             r  (float)      : The radial position of the black hole in the halo
-            v  (float)      : The relative velocity
+            v  (float or tuple)   : The speed of the orbiting object, either as |v|, or (v_r, v_theta) split into the direction of r, theta
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : float
                 The mass gain due to accretion
         """
-        return sp.halo.density(r) * v * Classic.BH_cross_section(sp, r, v, opt)
+        v_gas = sp.halo.velocity(r)
+        v_rel = ( Classic.get_relative_velocity(v, v_gas) if ('considerRelativeVelocities' in opt.additionalParameters and opt.additionalParameters['considerRelativeVelocities'])
+                        else Classic.get_relative_velocity(v, 0.) )
+        v = np.sqrt( v[0]**2 + v[1]**2 ) if isinstance(v, tuple) else v
+        return sp.halo.density(r) * v * Classic.BH_cross_section(sp, r, v_rel, opt)
 
 
     def dm2_dt_avg(sp, a, e=0., opt=EvolutionOptions()):
@@ -322,14 +331,18 @@ class Classic:
         Parameters:
             sp (SystemProp) : The object describing the properties of the inspiralling system
             r  (float)      : The radius of the orbiting object
-            v  (float)      : The speed of the orbiting object wrt to the dark matter halo
+            v  (float or tuple)   : The speed of the orbiting object, either as |v|, or (v_r, v_theta) split into the direction of r, theta
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : float
                 The magnitude of the accretion force
         """
-        return Classic.dm2_dt(sp, r, v, opt) *  v
+        v_gas = sp.halo.velocity(r)
+        v_rel = ( Classic.get_relative_velocity(v, v_gas) if ('considerRelativeVelocities' in opt.additionalParameters and opt.additionalParameters['considerRelativeVelocities'])
+                        else Classic.get_relative_velocity(v, 0.) )
+        v = np.sqrt( v[0]**2 + v[1]**2 ) if isinstance(v, tuple) else v
+        return Classic.dm2_dt(sp, r, v_rel, opt) *  v
 
 
     def F_acc_recoil(sp, r, v, opt=EvolutionOptions()):
@@ -340,14 +353,18 @@ class Classic:
         Parameters:
             sp (SystemProp) : The object describing the properties of the inspiralling system
             r  (float)      : The radius of the orbiting object
-            v  (float)      : The speed of the orbiting object wrt to the dark matter halo
+            v  (float or tuple)   : The speed of the orbiting object, either as |v|, or (v_r, v_theta) split into the direction of r, theta
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : float
                 The magnitude of the accretion recoil force
         """
-        return Classic.dm2_dt(sp, r, v, opt) * v
+        v_gas = sp.halo.velocity(r)
+        v_rel = ( Classic.get_relative_velocity(v, v_gas) if ('considerRelativeVelocities' in opt.additionalParameters and opt.additionalParameters['considerRelativeVelocities'])
+                        else Classic.get_relative_velocity(v, 0.) )
+        v = np.sqrt( v[0]**2 + v[1]**2 ) if isinstance(v, tuple) else v
+        return Classic.dm2_dt(sp, r, v_rel, opt) * v
 
     def F_gas(sp, r, v, opt=EvolutionOptions()):
         """
@@ -361,13 +378,17 @@ class Classic:
         Parameters:
             sp (SystemProp) : The object describing the properties of the inspiralling system
             r  (float)      : The radius of the orbiting object
-            v  (float)      : The speed of the orbiting object
+            v  (float or tuple)   : The speed of the orbiting object, either as |v|, or (v_r, v_theta) split into the direction of r, theta
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : float
                 The magnitude of the force through gas interactions
         """
+        v_gas = sp.halo.velocity(r)
+        v_rel = ( Classic.get_relative_velocity(v, v_gas) if ('considerRelativeVelocities' in opt.additionalParameters and opt.additionalParameters['considerRelativeVelocities'])
+                        else Classic.get_relative_velocity(v, 0.) )
+
         if opt.additionalParameters['gasInteraction'] == 'gasTorqueLossTypeI':
             mach_number = sp.halo.mach_number(r)
             Sigma = sp.halo.surface_density(r)
@@ -403,6 +424,23 @@ class Classic:
 
         return F_gas
 
+    def get_relative_velocity(v_m2, v_gas):
+        if isinstance(v_m2, tuple):
+            v_rel = ( np.sqrt( (v_m2[0] - v_gas[0])**2 + (v_m2[1] - v_gas[1])**2 ) if isinstance(v_gas, tuple)
+                                                        else np.sqrt( v_m2[0]**2 + (v_m2[1] - v_gas)**2 ) )
+        else:
+            v_rel = ( np.sqrt( (v_gas[0])**2 + (v_m2 - v_gas[1])**2 ) if isinstance(v_gas, tuple)
+                                                        else  v_m2 - v_gas )
+        return v_rel
+
+
+    def get_orbital_elements(sp, a, e, phi):
+        r = a*(1. - e**2)/(1. + e*np.cos(phi))
+        v = np.sqrt(sp.m_total(a) *(2./r - 1./a))
+        v_phi = r * np.sqrt(sp.m_total(a)*a*(1.-e**2))/r**2
+        v_r = np.sqrt(np.max([v**2 - v_phi**2, 0.]))
+        # print(r, v, (v_r, v_phi))
+        return r, v, v_r, v_phi
 
 
     def dE_force_dt(sp, F, a, e=0., opt=EvolutionOptions()):
@@ -423,15 +461,14 @@ class Classic:
                 The energy loss due to accretion
         """
         if e == 0.:
-            v_s = sp.omega_s(a)*a
-            return - F(sp, a, v_s, opt)*v_s
+            v = sp.omega_s(a)*a
+            return - F(sp, a, v, opt)*v
         else:
             if  isinstance(a, (collections.Sequence, np.ndarray)):
                 return np.array([Classic.dE_force_dt(sp, a_i, e, opt) for a_i in a])
             def integrand(phi):
-                r = a*(1. - e**2)/(1. + e*np.cos(phi))
-                v_s = np.sqrt(sp.m_total(a) *(2./r - 1./a))
-                return F(sp, r, v_s, opt)*v_s / (1.+e*np.cos(phi))**2
+                r, v, v_r, v_phi = Classic.get_orbital_elements(sp, a, e, phi)
+                return F(sp, r, (v_r, v_phi), opt)*v / (1.+e*np.cos(phi))**2
             return -(1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
 
@@ -453,9 +490,8 @@ class Classic:
                 The angular momentum loss due to accretion
         """
         def integrand(phi):
-            r = a*(1. - e**2)/(1. + e*np.cos(phi))
-            v_s = np.sqrt(sp.m_total(a) *(2./r - 1./a))
-            return F(sp, r, v_s, opt) / v_s / (1.+e*np.cos(phi))**2
+            r, v, v_r, v_phi = Classic.get_orbital_elements(sp, a, e, phi)
+            return F(sp, r, (v_r, v_phi), opt)/v / (1.+e*np.cos(phi))**2
         return -(1.-e**2)**(3./2.)/2./np.pi *np.sqrt(sp.m_total(a) * a*(1.-e**2)) *  quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
 
@@ -702,7 +738,7 @@ class Classic:
         t = Int.t*t_scale
         a = Int.y[0]*a_scale;
         ev = Classic.EvolutionResults(sp, opt, t, a, msg=Int.message)
-        ev.e = Int.y[1] if opt.elliptic else 0.
+        ev.e = Int.y[1] if opt.elliptic else np.zeros(np.shape(ev.t))
         ev.m2 = Int.y[2]*m_scale if accretion else sp.m2;
 
         if opt.verbose > 0:

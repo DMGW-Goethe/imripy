@@ -55,6 +55,19 @@ class MatterHalo:
         else:
             return 4.*np.pi*quad(integrand, 0., r, args=(0.))[0]
 
+    def velocity(self, r):
+        """
+        The velocity of the particles in the halo
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the velocity
+
+        Returns:
+            out : float or array_like (depending on r)
+                The velocity at the radius r
+        """
+        return 0.
 
     def __str__(self):
         """

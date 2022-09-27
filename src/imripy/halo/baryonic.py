@@ -204,7 +204,6 @@ class MichelAccretion(MatterHalo):
         """
         The velocities v_r, v_phi of the particles in the halo
 
-
         The density function of the Michel accretion halo
 
         Parameters:
@@ -224,7 +223,7 @@ class MichelAccretion(MatterHalo):
         v_r = -u/W  # see eq (11.98) in Rezzolla(2013) but with a negative sign since the particles are falling inward
         v_r = v_r[0] if len(v_r) == 1 else v_r
         v_phi = np.zeros(np.shape(v_r))
-        return v_r, v_phi
+        return (v_r, v_phi)
 
     def density(self, r):
         """
@@ -287,6 +286,9 @@ class BaryonicDisc(MatterHalo):
         pass
 
     def soundspeed(self, r):
+        pass
+
+    def velocity(self, r):
         pass
 
     def mass(self, r, **kwargs):
@@ -417,6 +419,21 @@ class AlphaDisc(BaryonicDisc):
         Omega = np.sqrt(self.M/r**3)
         return self.scale_height(r) * Omega
 
+    def velocity(self, r):
+        """
+        The velocity of the particles in the disc
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the velocity
+
+        Returns:
+            out : tuple
+                The velocity (v_r, v_phi) at the radius r
+        """
+        v_phi = np.sqrt(self.M/r)
+        return  (0., v_phi)
+
     def mach_number(self, r):
         """
         The mach number of the disc at radius r
@@ -534,6 +551,21 @@ class BetaDisc(BaryonicDisc):
         Omega = np.sqrt(self.M/r**3)
         return self.scale_height(r) * Omega
 
+    def velocity(self, r):
+        """
+        The velocity of the particles in the disc
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the velocity
+
+        Returns:
+            out : tuple
+                The velocity (v_r, v_phi) at the radius r
+        """
+        v_phi = np.sqrt(self.M/r)
+        return  (0., v_phi)
+
     def mach_number(self, r):
         """
         The mach number of the disc at radius r
@@ -553,9 +585,10 @@ class BetaDisc(BaryonicDisc):
         return f"BetaDisc (M = {self.M}, alpha={self.alpha}, f_edd/eps={self.f_edd/self.eps})"
 
 
-class ShakuraSunyaevDisc(BaryonicDisc):
+class DerdzinskiMayerDisc(BaryonicDisc):
     """
-    The class describing a baryonic accretion disc as introduced by Shakura & Sunyaev
+    The class describing a baryonic accretion disc as introduced by Derdzinski & Mayer,
+        based on models of Shakura & Sunyaev and Sirko & Goodman, using an opacity description by Bell & Linn,
         with viscosity and opacity descriptions as given by the equations of appendix A of https://arxiv.org/pdf/2206.05292.pdf
 
     Attributes:
@@ -581,7 +614,7 @@ class ShakuraSunyaevDisc(BaryonicDisc):
 
     def __init__(self, M, M_dot, alpha):
         """
-        The constructor for the ShakuraSunyaev class.
+        The constructor for the DerdzinskiMayerDisc class.
 
         Parameters:
             M : float
@@ -667,7 +700,7 @@ class ShakuraSunyaevDisc(BaryonicDisc):
             rho, Sigma, T_mid, c_s2 = x
 
             nu = self.alpha * c_s2 / Omega
-            kappa = ShakuraSunyaevDisc.opacity_scaling(np.max([rho/ms.g_cm3_to_invpc2, 0.]), T_mid) / ms.g_cm2_to_invpc # TODO: check units
+            kappa = DerdzinskiMayerDisc.opacity_scaling(np.max([rho/ms.g_cm3_to_invpc2, 0.]), T_mid) / ms.g_cm2_to_invpc # TODO: check units
             kappa = np.inf if kappa <= 0. else kappa
             tau_opt = kappa*Sigma/2.
 
@@ -855,7 +888,7 @@ class ShakuraSunyaevDisc(BaryonicDisc):
 
 
     def __str__(self):
-        return f"ShakuraSunyaevDisc (M = {self.M}, M_dot={self.M_dot}, alpha={self.alpha})"
+        return f"DerdzinskiMayerDisc (M = {self.M}, M_dot={self.M_dot}, alpha={self.alpha})"
 
 
 
