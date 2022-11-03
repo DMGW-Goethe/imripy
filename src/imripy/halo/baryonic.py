@@ -266,10 +266,10 @@ class MichelAccretion(MatterHalo):
         return f"MichelAccretion(M={self.M}, M_dot={self.M_dot}, M_dot/M_dot_Edd={self.M_dot/(2.2 * 1e-9 * self.M /0.3064)}, rho_c={self.rho_c}, u_c={self.u_c}, kappa={self.kappa}, Gamma={self.Gamma})"
 
 
-class BaryonicDisc(MatterHalo):
+class BaryonicDisk(MatterHalo):
     """
-    An abstract class designed to streamline implementation of different baryonic disc models. Inherits from MatterHalo, but is axially symmetric, not spherically symmetric.
-    Has additional functions usually used to describe baryonic discs
+    An abstract class designed to streamline implementation of different baryonic disk models. Inherits from MatterHalo, but is axially symmetric, not spherically symmetric.
+    Has additional functions usually used to describe baryonic disk
 
     """
     def __init__(self):
@@ -293,7 +293,7 @@ class BaryonicDisc(MatterHalo):
 
     def mass(self, r, **kwargs):
         """
-        The mass that is contained in the disc in a circular shell of size r.
+        The mass that is contained in the disk in a circular shell of size r.
         This function numerically integrates over the density function, so that it can be used
             in inherited classes that have not implemented an analytic expression for the mass.
 
@@ -303,7 +303,7 @@ class BaryonicDisc(MatterHalo):
 
         Returns:
             out : float or np.ndarray (depending on r)
-                The mass inside the disc of size r
+                The mass inside the disk of size r
         """
         integrand = lambda r, m: self.surface_density(r, **kwargs)*r
         if isinstance(r, (collections.Sequence, np.ndarray)):
@@ -319,13 +319,13 @@ class BaryonicDisc(MatterHalo):
             out : string
                 The string representation
         """
-        return "BaryonicDisc"
+        return "BaryonicDisk"
 
 
-class AlphaDisc(BaryonicDisc):
+class AlphaDisk(BaryonicDisk):
     """
-    The class describing a baryonic accretion disc as introduced by Shakura & Sunyaev
-        with the alpha disc parametrization as explained in https://arxiv.org/pdf/2207.10086.pdf
+    The class describing a baryonic accretion disk as introduced by Shakura & Sunyaev
+        with the alpha disk parametrization as explained in https://arxiv.org/pdf/2207.10086.pdf
 
     Attributes:
         r_min (float): An minimum radius below which the density is always 0
@@ -340,7 +340,7 @@ class AlphaDisc(BaryonicDisc):
 
     def __init__(self, M, alpha, f_edd, eps):
         """
-        The constructor for the AlphaDisc class.
+        The constructor for the AlphaDisk class.
 
         Parameters:
             M : float
@@ -360,7 +360,7 @@ class AlphaDisc(BaryonicDisc):
 
     def surface_density(self, r):
         """
-        The surface density function of the disc
+        The surface density function of the disk
             as given by eq (2.1) of https://arxiv.org/pdf/2207.10086.pdf
 
         Parameters:
@@ -376,7 +376,7 @@ class AlphaDisc(BaryonicDisc):
 
     def scale_height(self, r):
         """
-        The disc scale height at radius r
+        The disk scale height at radius r
             as given by eq (2.1) of https://arxiv.org/pdf/2207.10086.pdf
 
         Parameters:
@@ -385,13 +385,13 @@ class AlphaDisc(BaryonicDisc):
 
         Returns:
             out : float or array_like (depending on r)
-                The disc scale height at the radius r
+                The disk scale height at the radius r
         """
         return 1.5 * (self.f_edd/0.1 * 0.1 / self.eps) * self.M * np.ones(np.shape(r))
 
     def density(self, r):
         """
-        The density function of the disc
+        The density function of the disk
 
         Parameters:
             r : float or array_like
@@ -405,7 +405,7 @@ class AlphaDisc(BaryonicDisc):
 
     def soundspeed(self, r):
         """
-        The soundspeed c_s of the disc
+        The soundspeed c_s of the disk
             as given by eq (A6) of https://arxiv.org/pdf/2206.05292.pdf
 
         Parameters:
@@ -421,7 +421,7 @@ class AlphaDisc(BaryonicDisc):
 
     def velocity(self, r):
         """
-        The velocity of the particles in the disc
+        The velocity of the particles in the disk
 
         Parameters:
             r : float or array_like
@@ -436,7 +436,7 @@ class AlphaDisc(BaryonicDisc):
 
     def mach_number(self, r):
         """
-        The mach number of the disc at radius r
+        The mach number of the disk at radius r
             as given below eq (A7) of https://arxiv.org/pdf/2206.05292.pdf
 
         Parameters:
@@ -450,13 +450,13 @@ class AlphaDisc(BaryonicDisc):
         return r / self.scale_height(r)
 
     def __str__(self):
-        return f"AlphaDisc (M = {self.M}, alpha={self.alpha}, f_edd/eps={self.f_edd/self.eps})"
+        return f"AlphaDisk (M = {self.M}, alpha={self.alpha}, f_edd/eps={self.f_edd/self.eps})"
 
 
-class BetaDisc(BaryonicDisc):
+class BetaDisk(BaryonicDisk):
     """
-    The class describing a baryonic accretion disc as introduced by Shakura & Sunyaev
-        with the beta disc parametrization as explained in https://arxiv.org/pdf/2207.10086.pdf
+    The class describing a baryonic accretion disk as introduced by Shakura & Sunyaev
+        with the beta disk parametrization as explained in https://arxiv.org/pdf/2207.10086.pdf
 
     Attributes:
         r_min (float): An minimum radius below which the density is always 0
@@ -471,7 +471,7 @@ class BetaDisc(BaryonicDisc):
 
     def __init__(self, M, alpha, f_edd, eps):
         """
-        The constructor for the BetaDisc class.
+        The constructor for the BetaDisk class.
 
         Parameters:
             M : float
@@ -491,7 +491,7 @@ class BetaDisc(BaryonicDisc):
 
     def surface_density(self, r):
         """
-        The surface density function of the disc
+        The surface density function of the disk
             as given by eq (2.1) of https://arxiv.org/pdf/2207.10086.pdf
 
         Parameters:
@@ -508,7 +508,7 @@ class BetaDisc(BaryonicDisc):
 
     def scale_height(self, r):
         """
-        The disc scale height at radius r
+        The disk scale height at radius r
             as given by eq (2.1) of https://arxiv.org/pdf/2207.10086.pdf
 
         Parameters:
@@ -517,13 +517,13 @@ class BetaDisc(BaryonicDisc):
 
         Returns:
             out : float or array_like (depending on r)
-                The disc scale height at the radius r
+                The disk scale height at the radius r
         """
         return 1.5 * (self.f_edd/0.1 * 0.1 / self.eps) * self.M* np.ones(np.shape(r))
 
     def density(self, r):
         """
-        The density function of the disc
+        The density function of the disk
 
         Parameters:
             r : float or array_like
@@ -537,7 +537,7 @@ class BetaDisc(BaryonicDisc):
 
     def soundspeed(self, r):
         """
-        The soundspeed c_s of the disc
+        The soundspeed c_s of the disk
             as given by eq (A6) of https://arxiv.org/pdf/2206.05292.pdf
 
         Parameters:
@@ -553,7 +553,7 @@ class BetaDisc(BaryonicDisc):
 
     def velocity(self, r):
         """
-        The velocity of the particles in the disc
+        The velocity of the particles in the disk
 
         Parameters:
             r : float or array_like
@@ -568,7 +568,7 @@ class BetaDisc(BaryonicDisc):
 
     def mach_number(self, r):
         """
-        The mach number of the disc at radius r
+        The mach number of the disk at radius r
             as given below eq (A7) of https://arxiv.org/pdf/2206.05292.pdf
 
         Parameters:
@@ -582,12 +582,12 @@ class BetaDisc(BaryonicDisc):
         return r / self.scale_height(r)
 
     def __str__(self):
-        return f"BetaDisc (M = {self.M}, alpha={self.alpha}, f_edd/eps={self.f_edd/self.eps})"
+        return f"BetaDisk (M = {self.M}, alpha={self.alpha}, f_edd/eps={self.f_edd/self.eps})"
 
 
-class DerdzinskiMayerDisc(BaryonicDisc):
+class DerdzinskiMayerDisk(BaryonicDisk):
     """
-    The class describing a baryonic accretion disc as introduced by Derdzinski & Mayer,
+    The class describing a baryonic accretion disk as introduced by Derdzinski & Mayer,
         based on models of Shakura & Sunyaev and Sirko & Goodman, using an opacity description by Bell & Linn,
         with viscosity and opacity descriptions as given by the equations of appendix A of https://arxiv.org/pdf/2206.05292.pdf
 
@@ -614,7 +614,7 @@ class DerdzinskiMayerDisc(BaryonicDisc):
 
     def __init__(self, M, M_dot, alpha):
         """
-        The constructor for the DerdzinskiMayerDisc class.
+        The constructor for the DerdzinskiMayerDisk class.
 
         Parameters:
             M : float
@@ -624,7 +624,7 @@ class DerdzinskiMayerDisc(BaryonicDisc):
             alpha : float
                 The viscosity coefficient <1
         """
-        BaryonicDisc.__init__(self)
+        BaryonicDisk.__init__(self)
         self.M = M
         self.M_dot = M_dot
         self.alpha = alpha
@@ -668,7 +668,7 @@ class DerdzinskiMayerDisc(BaryonicDisc):
 
     def solve_eq(self, r, rho_0=None, Sigma_0=None, T_mid_0=None, c_s2_0=None):
         """
-        Solves the nonlinear equations of density, surface density, temperature and sound speed describing the disc
+        Solves the nonlinear equations of density, surface density, temperature and sound speed describing the disk
             as given in appendix A of https://arxiv.org/pdf/2206.05292.pdf
 
         Parameters:
@@ -700,7 +700,7 @@ class DerdzinskiMayerDisc(BaryonicDisc):
             rho, Sigma, T_mid, c_s2 = x
 
             nu = self.alpha * c_s2 / Omega
-            kappa = DerdzinskiMayerDisc.opacity_scaling(np.max([rho/ms.g_cm3_to_invpc2, 0.]), T_mid) / ms.g_cm2_to_invpc # TODO: check units
+            kappa = DerdzinskiMayerDisk.opacity_scaling(np.max([rho/ms.g_cm3_to_invpc2, 0.]), T_mid) / ms.g_cm2_to_invpc # TODO: check units
             kappa = np.inf if kappa <= 0. else kappa
             tau_opt = kappa*Sigma/2.
 
@@ -740,7 +740,7 @@ class DerdzinskiMayerDisc(BaryonicDisc):
 
     def density(self, r):
         """
-        The density function of the disc
+        The density function of the disk
 
         Parameters:
             r : float or array_like
@@ -762,7 +762,7 @@ class DerdzinskiMayerDisc(BaryonicDisc):
 
     def surface_density(self, r):
         """
-        The surface density function of the disc
+        The surface density function of the disk
 
         Parameters:
             r : float or array_like
@@ -785,7 +785,7 @@ class DerdzinskiMayerDisc(BaryonicDisc):
 
     def soundspeed(self, r):
         """
-        The soundspeed c_s of the disc
+        The soundspeed c_s of the disk
 
         Parameters:
             r : float or array_like
@@ -808,7 +808,7 @@ class DerdzinskiMayerDisc(BaryonicDisc):
 
     def mach_number(self, r):
         """
-        The mach number of the disc at radius r
+        The mach number of the disk at radius r
 
         Parameters:
             r : float or array_like
@@ -833,7 +833,7 @@ class DerdzinskiMayerDisc(BaryonicDisc):
 
     def scale_height(self, r):
         """
-        The disc scale height at radius r
+        The disk scale height at radius r
 
         Parameters:
             r : float or array_like
@@ -841,7 +841,7 @@ class DerdzinskiMayerDisc(BaryonicDisc):
 
         Returns:
             out : float or array_like (depending on r)
-                The disc scale height at the radius r
+                The disk scale height at the radius r
         """
         if isinstance(r, (np.ndarray, collections.Sequence)):
             h = np.zeros(np.shape(r))
@@ -882,39 +882,39 @@ class DerdzinskiMayerDisc(BaryonicDisc):
         interpHalo.mach_number = interp1d(r_grid, r_grid/Sigma * 2 * rho, kind='cubic', bounds_error=False, fill_value=(0.,0.))
         interpHalo.scale_height = interp1d(r_grid, Sigma/2./rho, kind='cubic', bounds_error=False, fill_value=(0.,0.))
         interpHalo.soundspeed = interp1d(r_grid, c_s, kind='cubic', bounds_error=False, fill_value=(0.,0.))
-        interpHalo.mass = interp1d(r_grid, BaryonicDisc.mass(interpHalo, r_grid), kind='cubic', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.mass = interp1d(r_grid, BaryonicDisk.mass(interpHalo, r_grid), kind='cubic', bounds_error=False, fill_value=(0.,0.))
         interpHalo.alpha = self.alpha
         return interpHalo
 
 
     def __str__(self):
-        return f"DerdzinskiMayerDisc (M = {self.M}, M_dot={self.M_dot}, alpha={self.alpha})"
+        return f"DerdzinskiMayerDisk (M = {self.M}, M_dot={self.M_dot}, alpha={self.alpha})"
 
 
 
 
-class MiyamotoNagaiDisc(MatterHalo):
+class MiyamotoNagaiDisk(MatterHalo):
     """
-    A class describing an axisymmetric, static, baryonic disc
+    A class describing an axisymmetric, static, baryonic disk
 
     Attributes:
         r_min (float): A minimum radius below which the density is always 0, this is initialized to 0
-        M_d   (float): The disc mass paramter
-        R_d   (float): The disc scale length
-        z_d   (float): The disc scale height
+        M_d   (float): The disk mass paramter
+        R_d   (float): The disk scale length
+        z_d   (float): The disk scale height
     """
 
     def __init__(self, M_d, R_d, z_d):
         """
-        The constructor for the MiyamotoNagaiDisc class
+        The constructor for the MiyamotoNagaiDisk class
 
         Parameters:
             M_d : float
-                The disc mass paramter
+                The disk mass paramter
             R_d : float
-                The disc scale length
+                The disk scale length
             z_d : float
-                The disc scale height
+                The disk scale height
         """
         self.M_d = M_d
         self.R_d = R_d
@@ -922,7 +922,7 @@ class MiyamotoNagaiDisc(MatterHalo):
 
     def density(self, r, z=0.):
         """
-        The density function of the disc, see eq (2.69) of Binney&Tremain(2007)
+        The density function of the disk, see eq (2.69) of Binney&Tremain(2007)
 
         Parameters:
             r : float or array_like
@@ -947,7 +947,7 @@ class MiyamotoNagaiDisc(MatterHalo):
             out : string
                 The string representation
         """
-        return f"MiyamotoNagaiDisc: M_d={self.M_d}, R_d={self.R_d}, z_d={self.z_d}"
+        return f"MiyamotoNagaiDisk: M_d={self.M_d}, R_d={self.R_d}, z_d={self.z_d}"
 
 
 

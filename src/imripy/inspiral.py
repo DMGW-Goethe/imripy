@@ -387,7 +387,7 @@ class Classic:
 
     def F_gas(sp, r, v, opt=EvolutionOptions()):
         """
-        The function gives the force an accretion disc would exert on a smaller black hole for different models of gas interaction
+        The function gives the force an accretion disk would exert on a smaller black hole for different models of gas interaction
 
         Choose model through opt.gasInteraction parameter
             'gasTorqueLoss' : according to https://arxiv.org/pdf/2206.05292.pdf
@@ -420,7 +420,7 @@ class Classic:
             mach_number = sp.halo.mach_number(r)
             Sigma = sp.halo.surface_density(r)
             if hasattr(sp.halo, 'alpha'):
-                alpha = sp.halo.alpha  # requires ShakuraSunyaevDisc atm
+                alpha = sp.halo.alpha  # requires ShakuraSunyaevDisk atm
             else:
                 alpha = opt.additionalParameters['gasTorqueAlpha'] if 'gasTorqueAlpha' in opt.additionalParameters else 0.1
 
