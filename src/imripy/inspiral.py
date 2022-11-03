@@ -194,6 +194,9 @@ class Classic:
         The opt.useHaloPhaseSpaceDescription parameter allows to use not the total dark matter density at r, but uses the halo phase space description
             such that only particles below a given v_max scatter. This option requires sp.halo to be of type DynamicSS.
             v_max can be provided via opt.additionalParameters['v_max']. If v_max is None, it is taken to be the orbital velocity.
+        The 'useGasDynamicalFrictionDescription' parameter allows alternative descriptions of dynamical friction inside gaseous mediums
+            'Ostriker' refers to eq (3) of https://arxiv.org/pdf/2203.01334.pdf
+            'Sanchez-Salcedo' refers to eq (5) of https://arxiv.org/pdf/2006.10206.pdf
 
         Parameters:
             sp (SystemProp) : The object describing the properties of the inspiralling system
@@ -213,6 +216,22 @@ class Classic:
 
         if ln_Lambda < 0.:
             ln_Lambda = np.log(sp.m1/sp.m2)/2.
+
+        if 'useGasDynamicalFrictionDescription' in opt.additionalParameters:
+            if opt.additionalParameters['useGasDynamicalFrictionDescription'] == 'Ostriker':
+                c_s = sp.halo.soundspeed(r)
+                I = np.where( v_rel >= c_s,
+                                    1./2. * np.log(1. - (c_s/v_rel)**2) + ln_Lambda, # supersonic regime
+                                     1./2. * np.log((1. + v_rel/c_s)/(1. - v_rel/c_s)) - v_rel/c_s) # subsonic regime
+                ln_Lambda = I
+                #ln_Lambda = 0.5
+                #print(c_s, v_rel, I, ln_Lambda)
+            elif opt.additionalParameters['useGasDynamicalFrictionDescription'] == 'Sanchez-Salcedo':
+                H = sp.halo.scale_height(r)
+                R_acc = 2.*sp.m2 /v_rel**2
+                ln_Lambda =  7.15*H/R_acc
+
+
         relCovFactor = 1.
         if 'relativisticDynamicalFrictionCorrections' in opt.additionalParameters and opt.additionalParameters['relativisticDynamicalFrictionCorrections']:
             relCovFactor = (1. + v_rel**2)**2 / (1. - v_rel**2)
@@ -413,14 +432,27 @@ class Classic:
 
             F_gas = Gamma_gas * sp.m2/sp.m1 / r
 
-        elif opt.additionalParameters['gasInteraction'] == 'dynamicalFriction':
-            H = sp.halo.scale_height(r)
-            v_rel = v   # TODO: Improve
-            R_acc = 2.*sp.m2 /v_rel**2
-            Sigma = sp.halo.surface_density(r)
-            coulombLog = opt.additionalParameters['gasCoulombLog'] if 'gasCoulombLog' in opt.additionalParameters else 7.15*H/R_acc
+        '''
+        elif opt.additionalParameters['gasInteraction'] == 'gasTorqueLossTypeITanaka':
+            C = 7.2e-10
+            n_r = 8.
+            n_alpha = -1.
+            n_fedd = -3.
+            n_M1 = 1.
+            A = (C * (sp.halo.alpha/0.1)**n_alpha * (sp.halo.f_edd/sp.halo.eps)**n_fedd
+                    * (sp.m1/1e6/ms.solar_mass_to_pc)**n_M1 )
+            L0 = 32./5. * sp.m2 / sp.m1 * (r/sp.m1)**(-7./2.)
+            L_disk = A * (r/10./sp.m1)**n_r * L0
 
-            F_gas =  np.sqrt(8.*np.pi) * Sigma * sp.m2**2 * coulombLog / H / v_rel**2 if Sigma > 0. else 0.
+            F_gas = L_disk * sp.m2/sp.m1 / r
+
+        elif opt.additionalParameters['gasInteraction'] == 'hydrodynamicDragForce':
+            C_d = 1.
+            R_p = 2.*sp.m2
+            rho = sp.halo.density(r)
+
+            F_gas = 1./2. * C_d * np.pi * rho * v_rel**2 * R_p**2
+        '''
 
         return F_gas
 
