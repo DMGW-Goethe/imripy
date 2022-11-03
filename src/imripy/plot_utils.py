@@ -72,7 +72,7 @@ def plotGWcharacteristicStrain(sp, ev, ax_h, label="", acc=1e-13, harmonics=[2],
                                  label=r"$h^{(" + str(n) +")}_{c,+," + label +"}$", color=c, **kwargs)
 
 
-def plotDeltaN(sp_0, ev_0, sp_1, ev_1, ax_dN, n=2, acc=1e-13, plotFgw5year=False, **kwargs):
+def plotDeltaN(sp_0, ev_0, sp_1, ev_1, ax_dN, ax_di=None, n=2, acc=1e-13, plotFgw5year=False, min_dN=10., **kwargs):
     """
     Plots the dephasing of a given harmonic in the natural units that are used throughout the code.
 
@@ -82,8 +82,10 @@ def plotDeltaN(sp_0, ev_0, sp_1, ev_1, ax_dN, n=2, acc=1e-13, plotFgw5year=False
         sp_1 (merger_system.SystemProp)   : The object describing the properties of the alternative inspiralling system
         ev_1 (inspiral.Classic.Evolution) : The evolution object that results from the alternative inspiral modeling
         ax_dN (plt.axes)                  : The axes on which to plot the difference in cycles left to observe
+        ax_di (plt.axes)    (optional)    : The axes on which to plot the dephasing index
         n (int)             (optional)    : The harmonic to be plotted
         plotFgw5year (bool) (optional)    : Whether to plot the line that represents 5 years to merger in vacuum case
+        min_dN (float)      (optional)    : The minimum dephasing amount for which to plot the dephasing index
         **kwargs                          : Other parameters that can be passed to the plotting, i.e. label, color, linestyle
 
     Returns:
@@ -96,12 +98,21 @@ def plotDeltaN(sp_0, ev_0, sp_1, ev_1, ax_dN, n=2, acc=1e-13, plotFgw5year=False
     N_0interp = interp1d(f_gw0, N_0, kind='cubic', bounds_error=False, fill_value=(0.,0.))
     f_gw1, N_1 = waveform.N_cycles_n(n, sp_1, ev_1, acc=acc)
 
-    dN = np.abs(N_1 - N_0interp(f_gw1))
-    l, = ax_dN.loglog(f_gw1/ms.hz_to_invpc, dN, **kwargs)
+    dN = N_1 - N_0interp(f_gw1)
+    l, = ax_dN.loglog(f_gw1/ms.hz_to_invpc, np.abs(dN), **kwargs)
 
     if plotFgw5year:
-        f_gw5yr = interp1d(ev_0.t, f_gw0, kind='cubic', bounds_error=True)(ev_0.t[-1] - 5.*ms.year_to_pc)
+        f_gw5yr = interp1d(ev_1.t, f_gw1, kind='cubic', bounds_error=True)(ev_1.t[-1] - 5.*ms.year_to_pc)
         ax_dN.axvline(f_gw5yr/ms.hz_to_invpc, linestyle='--', color=l.get_c())
+
+    if not ax_di is None:
+        ddN_df = np.gradient(dN, f_gw1)
+        stop = np.where(np.abs(dN) < min_dN)[0]
+        stop = stop[0] if len(stop) > 0 else len(ddN_df)
+        if 'color' in kwargs:
+            del kwargs['color']
+        ax_di.plot(f_gw1[:stop]/ms.hz_to_invpc, (ddN_df/dN * f_gw1)[:stop], color=l.get_c(), **kwargs)
+
     return f_gw1, dN
 
 
