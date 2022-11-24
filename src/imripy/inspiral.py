@@ -48,7 +48,7 @@ class Classic:
                 This requires the SystemProp.halo to be of type DynamicSS
 
         """
-        def __init__(self, accuracy=1e-8, verbose=1, elliptic=True, gwEmissionLoss=True, dynamicalFrictionLoss=True, accretion=False,
+        def __init__(self, accuracy=1e-10, verbose=1, elliptic=True, gwEmissionLoss=True, dynamicalFrictionLoss=True, accretion=False,
                                     accretionForceLoss=True, accretionRecoilLoss=True, accretionModel='',
                                     baryonicHaloEffects=False, baryonicEvolutionOptions=None,
                                     haloPhaseSpaceDescription=False, dmPhaseSpaceFraction=1., coulombLog=-1.,
