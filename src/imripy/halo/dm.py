@@ -1,5 +1,6 @@
 from .halo import *
 
+from imripy import constants as c
 
 class NFW(MatterHalo):
     """
@@ -214,6 +215,102 @@ class Spike(MatterHalo):
                 The string representation
         """
         return f"Spike(rho_spike={self.rho_spike:0.1e}, r_spike={self.r_spike:0.1e}, alpha={self.alpha:0.1e})"
+
+class RelativisticSpike(MatterHalo):
+    """
+    A class describing a spike halo profile with relatitivistic corrections
+        a la Speeney (2022) https://arxiv.org/pdf/2204.12508.pdf
+    The density is given by
+        rho (r) = rho_tilde * 10**delta ( rho_0/0.3GeV/cm^3 )**alpha ( M_BH / 1e6 M_sun )**beta ( a / 20kpc )**gamma
+        with rho_tilde = A ( 1 - 4 eta / x )**w  ( 4.17e11 / x )**q
+        and x = r / M_BH
+
+    Attributes:
+        r_min (float): An minimum radius below which the density is always 0
+        rho_0 (float): The density parameter of the origin distribution
+        M_BH  (float): The mass of the black hole
+        a     (float): The scaling parameter of the origin distribution
+        alpha (float): The power law index for the density parameter scaling
+        beta  (float): The power law index for the BH mass scaling
+        gamma (float): The power law index for the scaling parameter scaling
+        delta (float): The power law index for the scale of rho
+        eta   (float): A factor for either relativistic or newtonian scaling (1 vs 2)
+        A     (float): The density fit parameter for rho_tilde
+        w     (float): The fit parameter for the first term in rho_tilde
+        q     (float): The fit parameter for the second term in rho_tilde
+    """
+
+    def __init__(self, M_BH, rho_0, a, alpha, beta, gamma, delta, A, w, q, eta = 1):
+        """
+        The constructor for the Spike class
+
+        Parameters:
+            M_BH  (float)
+                The mass of the black hole
+            rho_0 (float)
+                The density parameter of the origin distribution
+            a     (float)
+                The scaling parameter of the origin distribution
+            alpha (float)
+                The power law index for the density parameter scaling
+            beta  (float)
+                The power law index for the BH mass scaling
+            gamma (float)
+                The power law index for the scaling parameter scaling
+            delta (float)
+                The power law index for the scale of rho
+            A     (float):
+                The density fit parameter for rho_tilde (in units 1/pc^2)
+            w     (float)
+                The fit parameter for the first term in rho_tilde
+            q     (float)
+                The fit parameter for the second term in rho_tilde
+            eta   (float)
+                A factor for either relativistic or newtonian scaling (1 vs 2)
+        """
+        MatterHalo.__init__(self)
+        self.rho_0 = rho_0
+        self.M_BH = M_BH
+        self.a = a
+        self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
+        self.delta = delta
+        self.A = A
+        self.w = w
+        self.q = q
+        self.eta = eta
+        self.r_min = 4.*self.eta*self.M_BH
+
+    def density(self, r):
+        """
+        The density function of the realtivistic spike halo
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the density
+
+        Returns:
+            out : float or array_like (depending on r)
+                The density at the radius r
+        """
+        x = r / self.M_BH
+        rho_tilde = self.A * (1. - 4*self.eta / x)**self.w  * (4.17e11 / x)**self.q
+        rho = rho_tilde * ( 10.**self.delta * (self.rho_0 / 0.3 / c.GeV_cm3_to_invpc2 )**self.alpha
+                            * (self.M_BH / 1e6 / c.solar_mass_to_pc)**self.beta * (self.a / 20e3 )**self.gamma )
+        return np.where(r > self.r_min, rho, 0.)
+
+
+    def __str__(self):
+        """
+        Gives the string representation of the object
+
+        Returns:
+            out : string
+                The string representation
+        """
+        return f"RelativistcSpike(rho_0={self.rho_0:0.1e}, M_BH={self.M_BH:0.1e}, a={self.a:0.1e}, A={self.A:0.1e}, w={self.w:0.1e}, q={self.q:0.1e})"
+
 
 class SpikedNFW(NFW, Spike):
     """
