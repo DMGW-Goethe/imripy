@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.integrate import quad
-import imripy.merger_system as ms
+import imripy.constants as c
 
 
 class Detector:
@@ -59,7 +59,7 @@ class eLisa(Detector):
             out : tuple
                 The left and right boundary of the bandwith
         """
-        return (1e-4 * ms.hz_to_invpc, 1. * ms.hz_to_invpc)
+        return (1e-4 * c.hz_to_invpc, 1. * c.hz_to_invpc)
 
     def NoiseSpectralDensity(self, f):
         """
@@ -74,10 +74,10 @@ class eLisa(Detector):
             out : tuple
                 The noise spectral density
         """
-        S_acc = 2.13e-29 * (1. + 1e-4*ms.hz_to_invpc /f) * ms.m_to_pc**2 * ms.hz_to_invpc**3
-        S_sn  = 5.25e-23 * ms.m_to_pc**2 * ms.s_to_pc
-        S_omn = 6.28e-23 * ms.m_to_pc**2 * ms.s_to_pc
-        l = 1e9 * ms.m_to_pc
+        S_acc = 2.13e-29 * (1. + 1e-4*c.hz_to_invpc /f) * c.m_to_pc**2 * c.hz_to_invpc**3
+        S_sn  = 5.25e-23 * c.m_to_pc**2 * c.s_to_pc
+        S_omn = 6.28e-23 * c.m_to_pc**2 * c.s_to_pc
+        l = 1e9 * c.m_to_pc
         return 20./3. * (4.*S_acc/(2.*np.pi*f)**4 + S_sn + S_omn)/l**2  * (1. + (2.*f*l/0.41)**2)
 
 class Lisa(Detector):
@@ -93,7 +93,7 @@ class Lisa(Detector):
             out : tuple
                 The left and right boundary of the bandwith
         """
-        return (1e-4 * ms.hz_to_invpc, 1. * ms.hz_to_invpc)
+        return (1e-4 * c.hz_to_invpc, 1. * c.hz_to_invpc)
 
     def NoiseSpectralDensity(self, f):
         """
@@ -108,10 +108,10 @@ class Lisa(Detector):
             out : float or array_like
                 The noise spectral density
         """
-        P_oms = (1.5e-11 * ms.m_to_pc)**2  * (1. + (2e-3 * ms.hz_to_invpc/f)**4) / ms.hz_to_invpc
-        P_acc = (3e-15 * ms.m_to_pc / ms.s_to_pc**2)**2 * (1. + (0.4e-3 * ms.hz_to_invpc/f)**2) * (1. + (f/8e-3/ms.hz_to_invpc)**4) / ms.hz_to_invpc
-        f_s = 19.09e-3 * ms.hz_to_invpc
-        L = 2.5e9 * ms.m_to_pc
+        P_oms = (1.5e-11 * c.m_to_pc)**2  * (1. + (2e-3 * c.hz_to_invpc/f)**4) / c.hz_to_invpc
+        P_acc = (3e-15 * c.m_to_pc / c.s_to_pc**2)**2 * (1. + (0.4e-3 * c.hz_to_invpc/f)**2) * (1. + (f/8e-3/c.hz_to_invpc)**4) / c.hz_to_invpc
+        f_s = 19.09e-3 * c.hz_to_invpc
+        L = 2.5e9 * c.m_to_pc
 
         return 10./3./L**2  * (P_oms + 2.* (1. + np.cos(f/f_s)**2 ) * P_acc / (2.*np.pi*f)**4) * (1. + 6./10. * (f/f_s)**2)
 

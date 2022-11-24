@@ -1,7 +1,6 @@
 import numpy as np
 from scipy.interpolate import UnivariateSpline, interp1d
 from scipy.integrate import quad, solve_ivp
-import imripy.merger_system as ms
 from scipy.special import jv
 import collections
 

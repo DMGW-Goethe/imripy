@@ -4,6 +4,7 @@ from scipy.integrate import quad
 import matplotlib.pyplot as plt
 
 from imripy import merger_system as ms
+from imripy import constants as c
 from imripy import inspiral
 from imripy import waveform
 from imripy import halo
@@ -54,7 +55,7 @@ def plotDiffEq(sp, r0, r1):
     eps = F(sp,2.*sp.r_isco())/Meff(sp, 2.*sp.r_isco())
     x = eps**(1./(3.-alpha))*r
     c_gw, c_df, ctild = coeffs(sp)
-    print("c_gw=", c_gw*ms.year_to_pc, "c_df=",c_df*ms.year_to_pc)
+    print("c_gw=", c_gw*c.year_to_pc, "c_df=",c_df*c.year_to_pc)
     evOpt=inspiral.Classic.EvolutionOptions(coulombLog=ln_Lambda)
     l, = plt.loglog(r/sp.r_isco(), np.abs(inspiral.Classic.dE_gw_dt(sp, r))/inspiral.Classic.dE_orbit_da(sp, r), label=r'$dE_{gw}/dt / dE_{orbit}/dR$', alpha =0.5)
     plt.loglog(r/sp.r_isco(), c_gw*f_gw(x, alpha)/eps**(1./(3.-alpha)) , label='$c_{gw}f_{gw}$', color=l.get_c(), linestyle='--')
@@ -105,7 +106,7 @@ def plotPhase(sp, t, R, omega_s):
     t_c = t[-1] + 5./256. * R[-1]**4/sp.m_total()**2 / sp.m_reduced()
 
     PhiTild0 =  - 3./4. * (8.*np.pi*sp.m_chirp()*f_gw)**(-5./3.) + 3./4.*(8.*np.pi*sp.m_chirp()*f_isco)**(-5./3.)
-    #plt.plot(f_gw/ms.hz_to_invpc, PhiTild0, label=r'$\tilde{\Phi}_0^{analytic}$')
+    #plt.plot(f_gw/c.hz_to_invpc, PhiTild0, label=r'$\tilde{\Phi}_0^{analytic}$')
 
     t_of_f = interp1d(omega_s/np.pi, t, kind='cubic', bounds_error=True)
     omega_gw = interp1d(t, 2*omega_s, kind='cubic', bounds_error=False, fill_value='extrapolate' )
@@ -116,10 +117,10 @@ def plotPhase(sp, t, R, omega_s):
 
     PhiTild = tpt - Phi
     DeltaPhi = PhiTild - PhiTild0
-    plt.plot(f_gw/ms.hz_to_invpc, Phi, label=r'$\Phi^{code}$')
-    plt.plot(f_gw/ms.hz_to_invpc, tpt, label=r'$2\pi t^{code}$')
-    plt.plot(f_gw/ms.hz_to_invpc, PhiTild, label=r'$\tilde{\Phi}^{code}$')
-    plt.plot(f_gw/ms.hz_to_invpc, DeltaPhi, label=r'$\Delta\tilde{\Phi}^{code}$')
+    plt.plot(f_gw/c.hz_to_invpc, Phi, label=r'$\Phi^{code}$')
+    plt.plot(f_gw/c.hz_to_invpc, tpt, label=r'$2\pi t^{code}$')
+    plt.plot(f_gw/c.hz_to_invpc, PhiTild, label=r'$\tilde{\Phi}^{code}$')
+    plt.plot(f_gw/c.hz_to_invpc, DeltaPhi, label=r'$\Delta\tilde{\Phi}^{code}$')
 
     Phi = np.cumsum([quad(lambda f: f**(-8./3.)/L(sp, f), f_gw[i-1], f_gw[i], limit=200, epsrel=1e-13, epsabs=1e-13)[0] if not i == 0 else 0. for i in range(len(f_gw)) ])
     Phi = 10./3. * (8.*np.pi*sp.m_chirp())**(-5./3.) * (Phi - Phi[-1])
@@ -128,10 +129,10 @@ def plotPhase(sp, t, R, omega_s):
     PhiTild = tpt - Phi
     DeltaPhi = PhiTild - PhiTild0
 
-    plt.plot(f_gw/ms.hz_to_invpc, Phi, label=r'$\Phi^{paper}$')
-    plt.plot(f_gw/ms.hz_to_invpc, tpt, label=r'$2\pi t^{paper}$')
-    plt.plot(f_gw/ms.hz_to_invpc, PhiTild, label=r'$\tilde{\Phi}^{paper}$')
-    plt.plot(f_gw/ms.hz_to_invpc, DeltaPhi, label=r'$\Delta\tilde{\Phi}^{paper}$')
+    plt.plot(f_gw/c.hz_to_invpc, Phi, label=r'$\Phi^{paper}$')
+    plt.plot(f_gw/c.hz_to_invpc, tpt, label=r'$2\pi t^{paper}$')
+    plt.plot(f_gw/c.hz_to_invpc, PhiTild, label=r'$\tilde{\Phi}^{paper}$')
+    plt.plot(f_gw/c.hz_to_invpc, DeltaPhi, label=r'$\Delta\tilde{\Phi}^{paper}$')
     plt.xlabel('f')
     plt.xscale('log')
     plt.yscale('symlog')
@@ -139,25 +140,25 @@ def plotPhase(sp, t, R, omega_s):
 
 def plotWaveform(sp, ev):
     f_gw, h, _, Psi  = waveform.h_2( sp, ev)
-    plt.loglog(f_gw/ms.hz_to_invpc, h, label=r'$\tilde{h}^{code}$')
+    plt.loglog(f_gw/c.hz_to_invpc, h, label=r'$\tilde{h}^{code}$')
 
     alpha = sp.halo.alpha
     eps = F(sp,2.*sp.r_isco())/Meff(sp, 2.*sp.r_isco())
     A = (5./24.)**(1./2.) * np.pi**(-2./3.) /sp.D * sp.m_chirp()**(5./6.)
-    plt.loglog(f_gw/ms.hz_to_invpc, A*f_gw**(-7./6.) * (L(sp,f_gw))**(-1./2.), label=r'$\tilde{h}^{paper,approx}$')
+    plt.loglog(f_gw/c.hz_to_invpc, A*f_gw**(-7./6.) * (L(sp,f_gw))**(-1./2.), label=r'$\tilde{h}^{paper,approx}$')
 
     delta = (Meff(sp, 2.*sp.r_isco())/np.pi**2 / f_gw**2)**(1.-alpha/3.)
     chi = 1. + delta*eps/3. + (2.-alpha)/9. *delta**2 * eps**2
     x = (delta*eps)**(1./(3.-alpha)) *chi
     c_gw, c_df, ctild = coeffs(sp)
-    plt.loglog(f_gw/ms.hz_to_invpc, A*f_gw**(-7./6.) * chi**(19./4.) * (K(x, alpha)* (1. + ctild*J(x, alpha)))**(-1./2.), label=r'$\tilde{h}^{paper}$' )
+    plt.loglog(f_gw/c.hz_to_invpc, A*f_gw**(-7./6.) * chi**(19./4.) * (K(x, alpha)* (1. + ctild*J(x, alpha)))**(-1./2.), label=r'$\tilde{h}^{paper}$' )
     plt.ylabel('h'); plt.xlabel('f')
 
 
-m1 = 1e3 *ms.solar_mass_to_pc
-m2 = 1. * ms.solar_mass_to_pc
+m1 = 1e3 *c.solar_mass_to_pc
+m2 = 1. * c.solar_mass_to_pc
 D = 1e3
-sp_1 = ms.SystemProp(m1, m2, halo.Spike( 226.*ms.solar_mass_to_pc, 0.54, 7./3.), D, includeHaloInTotalMass=True)
+sp_1 = ms.SystemProp(m1, m2, halo.Spike( 226.*c.solar_mass_to_pc, 0.54, 7./3.), D, includeHaloInTotalMass=True)
 evOpt=inspiral.Classic.EvolutionOptions(accuracy=1e-12, coulombLog=ln_Lambda)
 print(evOpt)
 

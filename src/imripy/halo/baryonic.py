@@ -1,5 +1,5 @@
 from .halo import *
-import imripy.merger_system as ms
+import imripy.constants as c
 
 from scipy.optimize import root_scalar, root
 
@@ -372,7 +372,7 @@ class AlphaDisk(BaryonicDisk):
                 The surface density at the radius r
         """
         # convert kg/m^2 to invpc
-        return 5.4e3 * 0.1*ms.g_cm2_to_invpc / (self.alpha/0.1) / (self.f_edd / 0.1 * 0.1 / self.eps) * (r/self.M)**(3./2.)
+        return 5.4e3 * 0.1*c.g_cm2_to_invpc / (self.alpha/0.1) / (self.f_edd / 0.1 * 0.1 / self.eps) * (r/self.M)**(3./2.)
 
     def scale_height(self, r):
         """
@@ -503,8 +503,8 @@ class BetaDisk(BaryonicDisk):
                 The surface density at the radius r
         """
         # convert kg/m^2 to invpc
-        return (2.1e7 * 0.1*ms.g_cm2_to_invpc * (self.alpha/0.1)**(-4./5.) * (self.f_edd/self.eps)**(3./5.)
-                * (self.M / 1e6 / ms.solar_mass_to_pc)**(1./5.) * (r / 10./self.M)**(-3./5.))
+        return (2.1e7 * 0.1*c.g_cm2_to_invpc * (self.alpha/0.1)**(-4./5.) * (self.f_edd/self.eps)**(3./5.)
+                * (self.M / 1e6 / c.solar_mass_to_pc)**(1./5.) * (r / 10./self.M)**(-3./5.))
 
     def scale_height(self, r):
         """
@@ -607,9 +607,9 @@ class DerdzinskiMayerDisk(BaryonicDisk):
     """
 
     boltzmann_constant = 3.697e-84  # in pc / kelvin
-    stefan_boltzmann_constant = 1.563e-60 / ms.m_to_pc**2  # in 1/pc^2 / Kelvin^4
+    stefan_boltzmann_constant = 1.563e-60 / c.m_to_pc**2  # in 1/pc^2 / Kelvin^4
     mean_molecular_weight = 0.62
-    hydrogen_mass = 1.243e-54 * ms.m_to_pc  # in pc
+    hydrogen_mass = 1.243e-54 * c.m_to_pc  # in pc
 
 
     def __init__(self, M, M_dot, alpha):
@@ -700,7 +700,7 @@ class DerdzinskiMayerDisk(BaryonicDisk):
             rho, Sigma, T_mid, c_s2 = x
 
             nu = self.alpha * c_s2 / Omega
-            kappa = DerdzinskiMayerDisk.opacity_scaling(np.max([rho/ms.g_cm3_to_invpc2, 0.]), T_mid) / ms.g_cm2_to_invpc # TODO: check units
+            kappa = DerdzinskiMayerDisk.opacity_scaling(np.max([rho/c.g_cm3_to_invpc2, 0.]), T_mid) / c.g_cm2_to_invpc # TODO: check units
             kappa = np.inf if kappa <= 0. else kappa
             tau_opt = kappa*Sigma/2.
 
@@ -711,13 +711,13 @@ class DerdzinskiMayerDisk(BaryonicDisk):
                              +  4./3. * self.stefan_boltzmann_constant * T_mid**4. / rho)
             c_s2_t = np.min([1., c_s2_t])
             T_mid_t = (3./8. * tau_opt + 1./2. + 1./4./tau_opt)**(1./4.) * T_eff
-            # print(f"kappa = {kappa*ms.g_cm2_to_invpc}, tau_opt = {tau_opt}")
+            # print(f"kappa = {kappa*c.g_cm2_to_invpc}, tau_opt = {tau_opt}")
             # print(f"rho={rho:.3e}->{rho_t:.3e}, Sigma={Sigma:.3e}->{Sigma_t:.3e}, T_mid={T_mid:.3e}->{T_mid_t:.3e}, c_s2={c_s2:.3e}->{c_s2_t:.3e}")
             return np.array([rho_t - rho, Sigma_t - Sigma, T_mid_t - T_mid,  c_s2_t - c_s2])
 
         # choose initial values
         mach_number_0 = 60.
-        Sigma_0 = 1e5 * ms.g_cm2_to_invpc if Sigma_0 is None else Sigma_0
+        Sigma_0 = 1e5 * c.g_cm2_to_invpc if Sigma_0 is None else Sigma_0
         rho_0 = Sigma_0 / 2. / r * mach_number_0 if rho_0 is None else rho_0
         T_mid_0 = T_eff if T_mid_0 is None else T_mid_0
         c_s2_0 = np.sqrt(self.boltzmann_constant / self.hydrogen_mass / self.mean_molecular_weight * T_mid_0

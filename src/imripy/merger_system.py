@@ -4,15 +4,6 @@ import imripy.halo as halo
 #from scipy.constants import G, c
 
 
-hz_to_invpc = 1.029e8
-s_to_pc = 9.716e-9
-m_to_pc = 3.241e-17
-solar_mass_to_pc = 4.8e-14
-g_cm3_to_invpc2 = 7.072e8
-g_cm2_to_invpc = 7.426e-27 / m_to_pc
-year_to_pc = 0.3064
-
-
 
 class SystemProp:
     """

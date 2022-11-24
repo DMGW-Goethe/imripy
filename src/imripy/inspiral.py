@@ -6,6 +6,7 @@ from scipy.spatial import Delaunay
 import collections.abc
 #import sys
 import time
+import imripy.constants as c
 import imripy.merger_system as ms
 import imripy.halo
 
@@ -440,7 +441,7 @@ class Classic:
             n_fedd = -3.
             n_M1 = 1.
             A = (C * (sp.halo.alpha/0.1)**n_alpha * (sp.halo.f_edd/sp.halo.eps)**n_fedd
-                    * (sp.m1/1e6/ms.solar_mass_to_pc)**n_M1 )
+                    * (sp.m1/1e6/c.solar_mass_to_pc)**n_M1 )
             L0 = 32./5. * sp.m2 / sp.m1 * (r/sp.m1)**(-7./2.)
             L_disk = A * (r/10./sp.m1)**n_r * L0
 
@@ -795,7 +796,7 @@ class HaloFeedback:
         ell_grid (np.ndarrya) : The result of the elliptic function on the grid
     """
     N_b = 50
-    b_min = 15e3 * ms.m_to_pc   # 15 km in pc
+    b_min = 15e3 * c.m_to_pc   # 15 km in pc
     m_grid_density = 6
 
     class EvolutionOptions:
