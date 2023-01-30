@@ -213,7 +213,7 @@ class Classic:
         v_gas = sp.halo.velocity(r)
         v_rel = ( Classic.get_relative_velocity(v, v_gas) if ('considerRelativeVelocities' in opt.additionalParameters and opt.additionalParameters['considerRelativeVelocities'])
                         else Classic.get_relative_velocity(v, 0.) )
-        #print(v, v_gas, v_rel)
+        # print(v, v_gas, v_rel)
 
         if ln_Lambda < 0.:
             ln_Lambda = np.log(sp.m1/sp.m2)/2.
@@ -221,9 +221,9 @@ class Classic:
         if 'useGasDynamicalFrictionDescription' in opt.additionalParameters:
             if opt.additionalParameters['useGasDynamicalFrictionDescription'] == 'Ostriker':
                 c_s = sp.halo.soundspeed(r)
-                I = np.where( v_rel >= c_s,
-                                    1./2. * np.log(1. - (c_s/v_rel)**2) + ln_Lambda, # supersonic regime
-                                     1./2. * np.log((1. + v_rel/c_s)/(1. - v_rel/c_s)) - v_rel/c_s) # subsonic regime
+                I = np.where( np.abs(v_rel) >= c_s,
+                                    1./2. * np.log(1. - (c_s/np.abs(v_rel))**2) + ln_Lambda, # supersonic regime
+                                    1./2. * np.log((1. + np.abs(v_rel)/c_s)/(1. - np.abs(v_rel)/c_s)) - np.abs(v_rel)/c_s) # subsonic regime
                 ln_Lambda = I
                 #ln_Lambda = 0.5
                 #print(c_s, v_rel, I, ln_Lambda)
@@ -238,11 +238,12 @@ class Classic:
             relCovFactor = (1. + v_rel**2)**2 / (1. - v_rel**2)
 
         if opt.haloPhaseSpaceDescription:
-            density = sp.halo.density(r, v_max=(opt.additionalParameters['v_max'] if 'v_max' in opt.additionalParameters else v_rel))
+            density = sp.halo.density(r, v_max=(opt.additionalParameters['v_max'] if 'v_max' in opt.additionalParameters else np.abs(v_rel)))
         else:
             density = sp.halo.density(r) * opt.dmPhaseSpaceFraction
 
-        return 4.*np.pi * relCovFactor * sp.m2**2 * density * ln_Lambda / v_rel**2
+        F_df = 4.*np.pi * relCovFactor * sp.m2**2 * density * ln_Lambda / v_rel**2  * np.sign(v_rel)
+        return np.nan_to_num(F_df)
 
 
     def BH_cross_section(sp, r, v, opt=EvolutionOptions()):
@@ -297,7 +298,7 @@ class Classic:
         v_rel = ( Classic.get_relative_velocity(v, v_gas) if ('considerRelativeVelocities' in opt.additionalParameters and opt.additionalParameters['considerRelativeVelocities'])
                         else Classic.get_relative_velocity(v, 0.) )
         v = np.sqrt( v[0]**2 + v[1]**2 ) if isinstance(v, tuple) else v
-        return sp.halo.density(r) * v * Classic.BH_cross_section(sp, r, v_rel, opt)
+        return sp.halo.density(r) * v * Classic.BH_cross_section(sp, r, np.abs(v_rel), opt)
 
 
     def dm2_dt_avg(sp, a, e=0., opt=EvolutionOptions()):
@@ -362,7 +363,7 @@ class Classic:
         v_rel = ( Classic.get_relative_velocity(v, v_gas) if ('considerRelativeVelocities' in opt.additionalParameters and opt.additionalParameters['considerRelativeVelocities'])
                         else Classic.get_relative_velocity(v, 0.) )
         v = np.sqrt( v[0]**2 + v[1]**2 ) if isinstance(v, tuple) else v
-        return Classic.dm2_dt(sp, r, v_rel, opt) *  v
+        return Classic.dm2_dt(sp, r, np.abs(v_rel), opt) *  v
 
 
     def F_acc_recoil(sp, r, v, opt=EvolutionOptions()):
@@ -384,7 +385,7 @@ class Classic:
         v_rel = ( Classic.get_relative_velocity(v, v_gas) if ('considerRelativeVelocities' in opt.additionalParameters and opt.additionalParameters['considerRelativeVelocities'])
                         else Classic.get_relative_velocity(v, 0.) )
         v = np.sqrt( v[0]**2 + v[1]**2 ) if isinstance(v, tuple) else v
-        return Classic.dm2_dt(sp, r, v_rel, opt) * v
+        return Classic.dm2_dt(sp, r, np.abs(v_rel), opt) * v
 
     def F_gas(sp, r, v, opt=EvolutionOptions()):
         """
@@ -459,10 +460,10 @@ class Classic:
 
     def get_relative_velocity(v_m2, v_gas):
         if isinstance(v_m2, tuple):
-            v_rel = ( np.sqrt( (v_m2[0] - v_gas[0])**2 + (v_m2[1] - v_gas[1])**2 ) if isinstance(v_gas, tuple)
-                                                        else np.sqrt( v_m2[0]**2 + (v_m2[1] - v_gas)**2 ) )
+            v_rel = (np.sign(v_m2[1]-v_gas[1])* np.sqrt( (v_m2[0] - v_gas[0])**2 + (v_m2[1] - v_gas[1])**2 ) if isinstance(v_gas, tuple)
+                                                        else np.sign(v_m2[1]-v_gas) * np.sqrt( v_m2[0]**2 + (v_m2[1] - v_gas)**2 ) )
         else:
-            v_rel = ( np.sqrt( (v_gas[0])**2 + (v_m2 - v_gas[1])**2 ) if isinstance(v_gas, tuple)
+            v_rel = (np.sign(v_m2-v_gas[1]) * np.sqrt( (v_gas[0])**2 + (v_m2 - v_gas[1])**2 ) if isinstance(v_gas, tuple)
                                                         else  v_m2 - v_gas )
         return v_rel
 
