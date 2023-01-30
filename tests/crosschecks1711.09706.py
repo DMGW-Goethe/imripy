@@ -3,11 +3,9 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import UnivariateSpline, interp1d
 from scipy.integrate import quad, odeint, solve_ivp
 from collections.abc import Sequence
-from imripy import halo
-from imripy import merger_system as ms
-from imripy import constants as c
-from imripy import inspiral
-from imripy import waveform
+
+from imripy import merger_system as ms, constants as c, inspiral, waveform, halo
+import imripy.inspiral.forces as forces
 
 
 ln_Lambda=3.
@@ -75,11 +73,14 @@ def plotDiffEq(sp, r0, r1):
     c_gw, c_df, ctild = coeffs(sp)
     print(c_gw*c.year_to_pc, c_df*c.year_to_pc)
     opt = inspiral.Classic.EvolutionOptions(coulombLog=3.)
-    l, = plt.loglog(r/sp.r_isco(), np.abs(inspiral.GWLoss.dE_dt(sp, r, e=0., opt=opt))/inspiral.Classic.dE_orbit_da(sp, r), label=r'$dE_{gw}/dt / dE_{orbit}/dR$', alpha=0.5)
+    l, = plt.loglog(r/sp.r_isco(), np.abs(forces.GWLoss().dE_dt(sp, r, e=0., opt=opt))/inspiral.Classic.dE_orbit_da(sp, r),
+                                            label=r'$dE_{gw}/dt / dE_{orbit}/dR$', alpha=0.5)
     plt.loglog(r/sp.r_isco(), c_gw*f_gw(x, alpha)/eps**(1./(3.-alpha)) , label='$c_{gw}f_{gw}$', color=l.get_c(), linestyle='--')
-    l, = plt.loglog(r/sp.r_isco(), np.abs(inspiral.DynamicalFriction.dE_dt(sp, r, e=0., opt=opt))/inspiral.Classic.dE_orbit_da(sp, r), label=r'$dE_{df}/dt / dE_{orbit}/dR$', alpha=0.5)
+    l, = plt.loglog(r/sp.r_isco(), np.abs(forces.DynamicalFriction(ln_Lambda=ln_Lambda).dE_dt(sp, r, e=0., opt=opt))/inspiral.Classic.dE_orbit_da(sp, r),
+                                            label=r'$dE_{df}/dt / dE_{orbit}/dR$', alpha=0.5)
     plt.loglog(r/sp.r_isco(), c_df* f_df(x, alpha)/eps**(1./(3.-alpha)), label='$c_{df}f_{df}$' , color=l.get_c(), linestyle='--')
-    l, = plt.loglog(r/sp.r_isco(), np.abs(inspiral.AccretionLoss.dE_dt(sp, r, e=0., opt=opt))/inspiral.Classic.dE_orbit_da(sp, r), label=r'$dE_{acc}/dt / dE_{orbit}/dR$', alpha=0.5)
+    l, = plt.loglog(r/sp.r_isco(), np.abs(forces.AccretionLoss().dE_dt(sp, r, e=0., opt=opt))/inspiral.Classic.dE_orbit_da(sp, r),
+                                            label=r'$dE_{acc}/dt / dE_{orbit}/dR$', alpha=0.5)
     plt.loglog(r/sp.r_isco(), c_df* f_df(x, alpha)*b_A(sp, x, alpha)/eps**(1./(3.-alpha)), label='$c_{df}f_{df}b_A$' , color=l.get_c(), linestyle='--')
     plt.xlabel('$r/r_{ISCO}$')
 
@@ -104,7 +105,7 @@ def plotPhiprimeprime(sp, r0, r1):
     eps = F(sp)/Meff(sp)
     x = eps**(1./(3.-alpha))*r
     c_gw, c_df, ctild = coeffs(sp)
-    evOpt=inspiral.Classic.EvolutionOptions(coulombLog=ln_Lambda)
+    evOpt = inspiral.Classic.EvolutionOptions(dissipativeForces={forces.GWLoss(), forces.DynamicalFriction(ln_Lambda=ln_Lambda), forces.AccretionLoss()})
 
     Phipp_ana = Meff(sp)**(1./2.) * eps**(3./2./(3.-alpha)) * c_gw*(1.+ctild*J(x, alpha)*(1.+b_A(sp, x, alpha))) *3./4.* K(x,alpha) * x**(-11./2.)
     plt.loglog(r/sp.r_isco(), Phipp_ana, label=r'$\ddot{\Phi}^{paper}$' )
@@ -289,8 +290,10 @@ plotPhiprimeprime(sp_1, sp_1.r_isco(), 1e5*sp_1.r_isco())
 plt.legend(); plt.grid()
 
 R0 = 100.*sp_1.r_isco()
-ev_nacc = inspiral.Classic.Evolve(sp_1, R0, a_fin=sp_1.r_isco(), opt=inspiral.Classic.EvolutionOptions(accuracy=1e-13, accretion=False, coulombLog=ln_Lambda, verbose=1))
-ev_acc = inspiral.Classic.Evolve(sp_1, R0, a_fin=sp_1.r_isco(), opt=inspiral.Classic.EvolutionOptions(accuracy=1e-13, accretion=True, accretionRecoilLoss=False, coulombLog=ln_Lambda, verbose=1))
+opt_nacc = inspiral.Classic.EvolutionOptions(accuracy=1e-13, dissipativeForces={forces.GWLoss(), forces.DynamicalFriction(ln_Lambda=ln_Lambda)}, verbose=1)
+opt_acc = inspiral.Classic.EvolutionOptions(accuracy=1e-13, m2_change = True, dissipativeForces={forces.GWLoss(), forces.DynamicalFriction(ln_Lambda=ln_Lambda), forces.AccretionLoss()}, verbose=1)
+ev_nacc = inspiral.Classic.Evolve(sp_1, R0, a_fin=sp_1.r_isco(), opt=opt_nacc)
+ev_acc = inspiral.Classic.Evolve(sp_1, R0, a_fin=sp_1.r_isco(), opt=opt_acc)
 
 plt.figure()
 plotPhase(sp_1, ev_acc, ev_nacc, f_c = 0.1*c.hz_to_invpc)
@@ -315,7 +318,8 @@ a0 = 100.*sp_1.r_isco()
 e0 = 1e-5
 sp_1.m2 = m2
 
-ev2 = inspiral.Classic.Evolve(sp_1, a0, e0, sp_1.r_isco(), opt=inspiral.Classic.EvolutionOptions(accuracy=1e-12, accretion=True, accretionRecoilLoss=False))
+opt_acc.accuracy = 1e-12
+ev2 = inspiral.Classic.Evolve(sp_1, a0, e0, sp_1.r_isco(), opt=opt_acc)
 
 plt.figure()
 plt.loglog(ev_acc.t, ev_acc.R, label='R, circular')

@@ -2,11 +2,8 @@ import numpy as np
 from scipy.interpolate import UnivariateSpline, interp1d
 from scipy.integrate import quad
 import matplotlib.pyplot as plt
-import imripy.merger_system as ms
-import imripy.halo as halo
-import imripy.inspiral as inspiral
-import imripy.waveform as waveform
-import imripy.detector as detector
+
+from imripy import merger_system as ms, halo, inspiral, waveform, detector
 
 solar_mass_in_pc = 4.8e-14
 year_in_pc = 0.3064

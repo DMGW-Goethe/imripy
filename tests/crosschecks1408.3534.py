@@ -3,11 +3,8 @@ from scipy.interpolate import UnivariateSpline, interp1d
 from scipy.integrate import quad
 import matplotlib.pyplot as plt
 
-from imripy import merger_system as ms
-from imripy import constants as c
-from imripy import inspiral
-from imripy import waveform
-from imripy import halo
+from imripy import merger_system as ms, constants as c, inspiral, waveform, halo
+import imripy.inspiral.forces as forces
 
 ln_Lambda = 3.
 
@@ -57,9 +54,10 @@ def plotDiffEq(sp, r0, r1):
     c_gw, c_df, ctild = coeffs(sp)
     print("c_gw=", c_gw*c.year_to_pc, "c_df=",c_df*c.year_to_pc)
     evOpt=inspiral.Classic.EvolutionOptions(coulombLog=ln_Lambda)
-    l, = plt.loglog(r/sp.r_isco(), np.abs(inspiral.GWLoss.dE_dt(sp, r, 0., evOpt))/inspiral.Classic.dE_orbit_da(sp, r), label=r'$dE_{gw}/dt / dE_{orbit}/dR$', alpha =0.5)
+    l, = plt.loglog(r/sp.r_isco(), np.abs(forces.GWLoss().dE_dt(sp, r, 0., evOpt))/inspiral.Classic.dE_orbit_da(sp, r), label=r'$dE_{gw}/dt / dE_{orbit}/dR$', alpha =0.5)
     plt.loglog(r/sp.r_isco(), c_gw*f_gw(x, alpha)/eps**(1./(3.-alpha)) , label='$c_{gw}f_{gw}$', color=l.get_c(), linestyle='--')
-    l, = plt.loglog(r/sp.r_isco(), np.abs(inspiral.DynamicalFriction.dE_dt(sp, r, 0., opt=evOpt))/inspiral.Classic.dE_orbit_da(sp, r), label=r'$dE_{df}/dt / dE_{orbit}/dR$', alpha = 0.5)
+    l, = plt.loglog(r/sp.r_isco(), np.abs(forces.DynamicalFriction(ln_Lambda=ln_Lambda).dE_dt(sp, r, 0., opt=evOpt))/inspiral.Classic.dE_orbit_da(sp, r),
+                                            label=r'$dE_{df}/dt / dE_{orbit}/dR$', alpha = 0.5)
     plt.loglog(r/sp.r_isco(), c_df* f_df(x, alpha)/eps**(1./(3.-alpha)), label='$c_{df}f_{df}$', color=l.get_c(), linestyle='--')
     plt.xlabel('$r/r_{ISCO}$')
 
@@ -75,7 +73,7 @@ def plotPhiprimeprime(sp, r0, r1):
     eps = F(sp,2.*sp.r_isco())/Meff(sp, 2.*sp.r_isco())
     x = eps**(1./(3.-alpha))*r
     c_gw, c_df, ctild = coeffs(sp)
-    evOpt=inspiral.Classic.EvolutionOptions(coulombLog=ln_Lambda)
+    evOpt=inspiral.Classic.EvolutionOptions(accuracy=1e-12, dissipativeForces={forces.GWLoss(), forces.DynamicalFriction(ln_Lambda=ln_Lambda)})
     plt.loglog(r/sp.r_isco(), (sp.mass(r)/r**3 )**(-1./2.) * (-3.*sp.mass(r)/r**4 + 4.*np.pi *sp.halo.density(r)/r )* inspiral.Classic.da_dt(sp, r, opt=evOpt), label=r'$\ddot{\Phi}^{code}$')
     plt.loglog(r/sp.r_isco(), Meff(sp, 2.*sp.r_isco())**(1./2.) * eps**(3./2./(3.-alpha)) \
                     * c_gw*(1.+ctild*J(x, alpha)) *3./4.* K(x,alpha) * x**(-11./2.), label=r'$\ddot{\Phi}^{paper}$', linestyle='--')
@@ -159,7 +157,7 @@ m1 = 1e3 *c.solar_mass_to_pc
 m2 = 1. * c.solar_mass_to_pc
 D = 1e3
 sp_1 = ms.SystemProp(m1, m2, halo.Spike( 226.*c.solar_mass_to_pc, 0.54, 7./3.), D, includeHaloInTotalMass=True)
-evOpt=inspiral.Classic.EvolutionOptions(accuracy=1e-12, coulombLog=ln_Lambda)
+evOpt=inspiral.Classic.EvolutionOptions(accuracy=1e-12, dissipativeForces={forces.GWLoss(), forces.DynamicalFriction(ln_Lambda=ln_Lambda)})
 print(evOpt)
 
 plotHalo(sp_1, 4./6.*sp_1.r_isco(), 1e4)

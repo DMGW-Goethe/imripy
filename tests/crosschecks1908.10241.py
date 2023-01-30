@@ -2,12 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
-from imripy import merger_system as ms
-from imripy import constants as c
-from imripy import halo
-from imripy import inspiral
-from imripy import waveform
-from imripy import detector
+from imripy import merger_system as ms, constants as c, inspiral, waveform, halo
+import imripy.inspiral.forces as forces
 
 m1 = 1e3 * c.solar_mass_to_pc
 m2 = 1e1  * c.solar_mass_to_pc
@@ -28,7 +24,7 @@ sp_1 = ms.SystemProp(m1, m2, halo.Spike(rho_spike, r_spike, 7./3.), D, inclinati
 sp_2 = ms.SystemProp(m1, m2, halo.Spike(rho_spike, r_spike, 2.),    D, inclination_angle=iota, pericenter_angle=beta)
 sp_3 = ms.SystemProp(m1, m2, halo.Spike(rho_spike, r_spike, 1.5),   D, inclination_angle=iota, pericenter_angle=beta)
 
-evOpt = inspiral.Classic.EvolutionOptions(coulombLog=ln_Lambda, accuracy=1e-10, verbose=1)
+evOpt = inspiral.Classic.EvolutionOptions(dissipativeForces={forces.GWLoss(), forces.DynamicalFriction(ln_Lambda=ln_Lambda)}, accuracy=1e-10, verbose=1)
 
 ev_0 = inspiral.Classic.Evolve(sp_0, a0, e0, a_fin=afin, opt=evOpt)
 ev_1 = inspiral.Classic.Evolve(sp_1, a0, e0, a_fin=afin, opt=evOpt)

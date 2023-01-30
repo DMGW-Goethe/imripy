@@ -9,7 +9,7 @@ import time
 import imripy.constants as c
 import imripy.merger_system as ms
 import imripy.halo
-from .forces import *
+from . import forces
 
 class Classic:
     """
@@ -28,65 +28,42 @@ class Classic:
                 A verbosity parameter ranging from 0 to 2
             elliptic : bool
                 Whether to model the inspiral on eccentric orbits, is set automatically depending on e0 passed to Evolve
+            m2_chance : bool
+                Whether to evolve the secondary's mass m2 with time (e.g. through accretion)
+            dissipativeForces : list of forces.DissipativeForces
+                List of the dissipative forces employed during the inspiral
             gwEmissionLoss : bool
-                Whether to include energy losses by graviational waves
+                These parameters are for backwards compatibility - Only applies if dissipativeForces=None - then forces.GWLoss is added to the list
             dynamicalFrictionLoss : bool
-                Whether to include energy losses by dynamical friction
-            accretion : bool
-                Whether to include accretion effects and evolve the secondary mass
-            accretionForceLoss : bool
-                Whether to include the energy loss due to the accretion mass change
-            accretionRecoilLoss : bool
-                Whether to include the energy loss due to the accretion recoil
-            baryonicHaloEffects : bool
-                Whether to include the effects of a baryonic halo. This requires sp.baryonicHalo to be not None
-            baryonicEvolutionOptions : EvolutionOptions
-                The evolution Options to describe the interaction with the baryon halo. Be careful to avoid nesting!
-            haloPhaseSpaceDescription : bool
-                Whether to use the phase space description of the halo to calculate relative velocities
-                This requires the SystemProp.halo to be of type DynamicSS
+                These parameters are for backwards compatibility - Only applies if dissipativeForces=None - then forces.GWLoss is added to the list
+            **kwargs : additional parameter
+                Will be saved in opt.additionalParameters and will be available throughout the integration
 
         """
-        def __init__(self, accuracy=1e-10, verbose=1, elliptic=True, gwEmissionLoss=True, dynamicalFrictionLoss=True, accretion=False,
-                                    accretionForceLoss=True, accretionRecoilLoss=True, accretionModel='',
-                                    baryonicHaloEffects=False, baryonicEvolutionOptions=None,
-                                    haloPhaseSpaceDescription=False, dmPhaseSpaceFraction=1., coulombLog=-1.,
+        def __init__(self, accuracy=1e-10, verbose=1, elliptic=True, m2_change=False,
+                                    dissipativeForces=None, gwEmissionLoss = True, dynamicalFrictionLoss = True,
+                                    considerRelativeVelocities=False,
                                     **kwargs):
             self.accuracy = accuracy
             self.verbose = verbose
             self.elliptic = elliptic
-            self.gwEmissionLoss = gwEmissionLoss
-            self.dynamicalFrictionLoss = dynamicalFrictionLoss
-            self.accretion = accretion
-            self.accretionForceLoss = accretionForceLoss and accretion
-            self.accretionRecoilLoss = accretionRecoilLoss and accretion
-            self.accretionModel = accretionModel if accretionModel in ['Classic', 'Bondi-Hoyle'] else 'Classic'
-            self.baryonicHaloEffects = baryonicHaloEffects
-            self.baryonicEvolutionOptions = baryonicEvolutionOptions
-            self.haloPhaseSpaceDescription = haloPhaseSpaceDescription
+            self.m2_change = m2_change
+            if dissipativeForces is None:
+                dissipativeForces = []
+                if gwEmissionLoss:
+                    dissipativeForces.append(forces.GWLoss())
+                if dynamicalFrictionLoss:
+                    dissipativeForces.append(forces.DynamicalFriction())
+            self.dissipativeForces = dissipativeForces
+            self.considerRelativeVelocities = considerRelativeVelocities
             self.additionalParameters = kwargs
-            self.ln_Lambda = coulombLog
-            self.dmPhaseSpaceFraction = dmPhaseSpaceFraction
-
-            if not self.baryonicEvolutionOptions is None:
-                self.baryonicEvolutionOptions.baryonicHaloEffects = False
-                self.baryonicEvolutionOptions.baryonicEvolutionOptions = None
-                self.baryonicEvolutionOptions.gwEmissionLoss = False
 
 
         def __str__(self):
-            s = "Options: "
-            if not self.gwEmissionLoss:
-                s += f"gwEmissionLoss = {self.gwEmissionLoss},"
-            if not self.dynamicalFrictionLoss:
-                s += f" dynamicalFrictionLoss = {self.dynamicalFrictionLoss},"
-            s += f"accretion = {self.accretion}"
-            if self.accretion:
-                s += f" (accretionForceLoss = {self.accretionForceLoss}, accretionRecoilLoss = {self.accretionRecoilLoss}, accretionModel = {self.accretionModel})"
-            s += f", haloPhaseSpaceDescription = {self.haloPhaseSpaceDescription}"
-            s += f", accuracy = {self.accuracy:.1e}"
-            if self.baryonicHaloEffects:
-                s += f", baryonicHaloEffects = {self.baryonicHaloEffects}"
+            s = "Options: dissipative Forces emplyed {"
+            for df in self.dissipativeForces:
+                s += str(df) + ", "
+            s += "}" + f", accuracy = {self.accuracy:.1e}"
             for key, value in self.additionalParameters.items():
                 s += f", {key}={value}"
             return s
@@ -161,22 +138,17 @@ class Classic:
             out : float
                 The total energy loss
         """
-        dE_gw_dt = GWLoss.dE_dt(sp, a, e, opt) if opt.gwEmissionLoss else 0.
-        dE_df_dt = DynamicalFriction.dE_dt(sp, a, e, opt) if opt.dynamicalFrictionLoss else 0.
-        dE_acc_dt = AccretionLoss.dE_dt(sp, a, e, opt) if opt.accretionForceLoss else 0.
-        #dE_acc_dt += Classic.dE_force_dt(sp, Classic.F_acc_recoil, a, e, opt) if opt.accretionRecoilLoss else 0.
-        dE_gas_dt = GasInteraction.dE_dt(sp, a, e, opt) if 'gasInteraction' in opt.additionalParameters else 0.
-
-        dE_baryons_dt = 0.
-        if opt.baryonicHaloEffects:
-            dmHalo = sp.halo
-            sp.halo = sp.baryonicHalo
-            dE_baryons_dt = Classic.dE_dt(sp, a, e, opt.baryonicEvolutionOptions)
-            sp.halo = dmHalo
+        dE_dt_tot = 0.
+        dE_dt_out = ""
+        for df in opt.dissipativeForces:
+            dE_dt = df.dE_dt(sp, a, e, opt)
+            dE_dt_tot += dE_dt
+            if opt.verbose > 2:
+                dE_dt_out += f"{df.name}:{dE_dt}, "
 
         if opt.verbose > 2:
-            print(f"dE_gw_dt= {dE_gw_dt}, dE_df_dt= {dE_df_dt}, dE_acc_dt= {dE_acc_dt}, dE_gas_dt= {dE_gas_dt}, dE_baryons_dt = {dE_baryons_dt}")
-        return ( dE_gw_dt + dE_df_dt + dE_acc_dt + dE_gas_dt + dE_baryons_dt)
+            print(dE_dt_out)
+        return  dE_dt_tot
 
 
     def dL_dt(sp, a, e, opt=EvolutionOptions()):
@@ -194,22 +166,18 @@ class Classic:
             out : float
                 The total angular momentum loss
         """
-        dL_gw_dt = GWLoss.dL_dt(sp, a, e, opt) if opt.gwEmissionLoss else 0.
-        dL_df_dt = DynamicalFriction.dL_dt(sp, a, e, opt) if opt.dynamicalFrictionLoss else 0.
-        dL_acc_dt = AccretionLoss.dL_dt(sp, a, e, opt) if opt.accretionForceLoss else 0.
-        #dL_acc_dt += Classic.dL_force_dt(sp, Classic.F_acc_recoil, a, e, opt) if opt.accretionRecoilLoss else 0.
-        dL_gas_dt = GasInteraction.dL_dt(sp, a, e, opt) if 'gasInteraction' in opt.additionalParameters else 0.
-
-        dL_baryons_dt = 0.
-        if opt.baryonicHaloEffects:
-            dmHalo = sp.halo
-            sp.halo = sp.baryonicHalo
-            dL_baryons_dt = Classic.dL_dt(sp, a, e, opt.baryonicEvolutionOptions)
-            sp.halo = dmHalo
+        dL_dt_tot = 0.
+        dL_dt_out = ""
+        for df in opt.dissipativeForces:
+            dL_dt = df.dL_dt(sp, a, e, opt)
+            dL_dt_tot += dL_dt
+            if opt.verbose > 2:
+                dL_dt_out += f"{df.name}:{dL_dt}, "
 
         if opt.verbose > 2:
-            print(f"dL_gw_dt= {dL_gw_dt}, dL_df_dt= {dL_df_dt}, dL_acc_dt= {dL_acc_dt}, dL_gas_dt= {dL_gas_dt}, dL_baryons_dt = {dL_baryons_dt}")
-        return  (dL_gw_dt + dL_df_dt + dL_acc_dt + dL_gas_dt + dL_baryons_dt)
+            print(dL_dt_out)
+        return  dL_dt_tot
+
 
     def dm2_dt(sp, a, e=0., opt=EvolutionOptions()):
         """
@@ -227,9 +195,20 @@ class Classic:
                 The secular time derivative of the mass of the secondary
 
         """
-        dm2_acc_dt = AccretionLoss.dm2_dt_avg(sp, a, e, opt) if opt.accretion else 0.
+        dm2_dt_tot = 0.
+        dm2_dt_out = ""
+        for df in opt.dissipativeForces:
+            if not df.m2_change:
+                continue
+            dm2_dt = df.dm2_dt_avg(sp, a, e, opt)
+            dm2_dt_tot += dm2_dt
+            if opt.verbose > 2:
+                dm2_dt_out += f"{df.name}:{dm2_dt}, "
 
-        return dm2_acc_dt
+        if opt.verbose > 2:
+            print(dm2_dt_out)
+
+        return dm2_dt_tot
 
 
     def da_dt(sp, a, e=0., opt=EvolutionOptions(), return_dE_dt=False):
@@ -345,8 +324,8 @@ class Classic:
                 An evolution object that contains the results
         """
         opt.elliptic = e_0 > 0.
-        accretion = opt.accretion or (opt.baryonicHaloEffects and opt.baryonicEvolutionOptions.accretion)
 
+        # calculate relevant timescales
         def g(e):
             return e**(12./19.)/(1. - e**2) * (1. + 121./304. * e**2)**(870./2299.)
 
@@ -360,9 +339,10 @@ class Classic:
         if a_fin == 0.:
             a_fin = sp.r_isco()     # Stop evolution at r_isco
 
+        # set scales to get rescale integration variables
         a_scale = a_0
         t_scale = t_fin
-        m_scale = sp.m2 if accretion else 1.
+        m_scale = sp.m2 if opt.m2_change else 1.
 
         t_step_max = np.inf
         if opt.verbose > 0:
@@ -375,14 +355,14 @@ class Classic:
 
             # Unpack array
             a, e, m2 = y
-            a *= a_scale; sp.m2 = m2 * m_scale if accretion else sp.m2
+            a *= a_scale; sp.m2 = m2 * m_scale if opt.m2_change else sp.m2
 
             if opt.verbose > 1:
                 tic = time.perf_counter()
 
             da_dt, dE_dt = Classic.da_dt(sp, a, e, opt=opt, return_dE_dt=True)
             de_dt = Classic.de_dt(sp, a, e, dE_dt=dE_dt, opt=opt) if opt.elliptic else 0.
-            dm2_dt = Classic.dm2_dt(sp, a, e, opt) if accretion else 0.
+            dm2_dt = Classic.dm2_dt(sp, a, e, opt) if opt.m2_change else 0.
 
             if opt.verbose > 1:
                 toc = time.perf_counter()
@@ -410,7 +390,7 @@ class Classic:
         a = Int.y[0]*a_scale;
         ev = Classic.EvolutionResults(sp, opt, t, a, msg=Int.message)
         ev.e = Int.y[1] if opt.elliptic else np.zeros(np.shape(ev.t))
-        ev.m2 = Int.y[2]*m_scale if accretion else sp.m2;
+        ev.m2 = Int.y[2]*m_scale if opt.m2_change else sp.m2;
 
         if opt.verbose > 0:
             print(Int.message)
