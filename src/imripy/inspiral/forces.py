@@ -1,13 +1,8 @@
 import numpy as np
-from scipy.integrate import solve_ivp, quad, simpson
-from scipy.interpolate import griddata, CloughTocher2DInterpolator
-from scipy.special import ellipeinc, ellipe, ellipkinc
-from scipy.spatial import Delaunay
-import collections.abc
-#import sys
-import time
+from scipy.integrate import quad
+import collections
+
 import imripy.constants as c
-import imripy.merger_system as ms
 import imripy.halo
 
 
@@ -35,12 +30,13 @@ class DissipativeForce:
         return v_rel
 
     @staticmethod
-    def get_orbital_elements(sp, a, e, phi):
+    def get_orbital_elements(sp, a, e, phi, opt):
         r = a*(1. - e**2)/(1. + e*np.cos(phi))
         v = np.sqrt(sp.m_total(a) *(2./r - 1./a))
         v_phi = r * np.sqrt(sp.m_total(a)*a*(1.-e**2))/r**2
         v_r = np.sqrt(np.max([v**2 - v_phi**2, 0.]))
         # print(r, v, (v_r, v_phi))
+        v_phi = v_phi if opt.progradeRotation else -v_phi
         return r, v, v_r, v_phi
 
 
@@ -77,14 +73,15 @@ class DissipativeForce:
             out : float
                 The energy loss due to accretion
         """
+        if  isinstance(a, (collections.Sequence, np.ndarray)):
+            return np.array([self.dE_dt(sp, a_i, e, opt) for a_i in a])
         if e == 0.:
             v = sp.omega_s(a)*a
-            return - self.F(sp, a, v, opt)*v
+            r, v, v_r, v_phi = self.get_orbital_elements(sp, a, 0., 0., opt)
+            return - self.F(sp, a, (v_r, v_phi), opt)*v
         else:
-            if  isinstance(a, (collections.Sequence, np.ndarray)):
-                return np.array([self.dE_dt(sp, a_i, e, opt) for a_i in a])
             def integrand(phi):
-                r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi)
+                r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
                 return self.F(sp, r, (v_r, v_phi), opt)*v / (1.+e*np.cos(phi))**2
             return -(1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
@@ -106,7 +103,7 @@ class DissipativeForce:
                 The angular momentum loss due to accretion
         """
         def integrand(phi):
-            r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi)
+            r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
             return self.F(sp, r, (v_r, v_phi), opt)/v / (1.+e*np.cos(phi))**2
         return -(1.-e**2)**(3./2.)/2./np.pi *np.sqrt(sp.m_total(a) * a*(1.-e**2)) *  quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
@@ -249,7 +246,11 @@ class DynamicalFriction(DissipativeForce):
             relCovFactor = (1. + v_rel**2)**2 / (1. - v_rel**2)
 
         if self.haloPhaseSpaceDescription:
-            density = halo.density(r, v_max=(self.v_max if not v_max is None else np.abs(v_rel)))
+            if 'v_max' in opt.additionalParameters:
+                v_max = opt.additionalParameters['v_max']
+            else:
+                v_max = self.v_max
+            density = halo.density(r, v_max=(v_max if not v_max is None else np.abs(v_rel)))
         else:
             density = halo.density(r) * self.dmPhaseSpaceFraction
 
@@ -291,7 +292,7 @@ class GasDynamicalFriction(DissipativeForce):
         """
         ln_Lambda = self.ln_Lambda
         disk = sp.baryonicHalo
-        v_gas = sp.halo.velocity(r)
+        v_gas = disk.velocity(r)
         v_rel = ( self.get_relative_velocity(v, v_gas) if opt.considerRelativeVelocities
                         else self.get_relative_velocity(v, 0.) )
         # print(v, v_gas, v_rel)
@@ -299,18 +300,19 @@ class GasDynamicalFriction(DissipativeForce):
         if ln_Lambda < 0.:
             ln_Lambda = np.log(sp.m1/sp.m2)/2.
 
-        if self.description == 'Ostriker':
+        if self.frictionModel == 'Ostriker':
             c_s = disk.soundspeed(r)
             I = np.where( np.abs(v_rel) >= c_s,
                                 1./2. * np.log(1. - (c_s/np.abs(v_rel))**2) + ln_Lambda, # supersonic regime
                                 1./2. * np.log((1. + np.abs(v_rel)/c_s)/(1. - np.abs(v_rel)/c_s)) - np.abs(v_rel)/c_s) # subsonic regime
             ln_Lambda = I
-        elif self.description == 'Sanchez-Salcedo':
+        elif self.frictionModel == 'Sanchez-Salcedo':
                 H = disk.scale_height(r)
                 R_acc = 2.*sp.m2 /v_rel**2
                 ln_Lambda =  7.15*H/R_acc
 
         F_df = 4.*np.pi * sp.m2**2 * disk.density(r) * ln_Lambda / v_rel**2  * np.sign(v_rel)
+        # print(v, v_gas, v_rel, F_df)
         return np.nan_to_num(F_df)
 
 
@@ -447,7 +449,7 @@ class AccretionLoss(DissipativeForce):
         return self.dm2_dt(sp, r, np.abs(v_rel), opt) * v
 
 
-def GasInteraction(DissipativeForce):
+class GasInteraction(DissipativeForce):
     name = "GasInteraction"
 
     def __init__(self, gasInteraction = 'gasTorqueLossTypeI', alpha=0.1, fudgeFactor=1.):
@@ -475,22 +477,23 @@ def GasInteraction(DissipativeForce):
             out : float
                 The magnitude of the force through gas interactions
         """
-        v_gas = sp.halo.velocity(r)
+        disk = sp.baryonicHalo
+        v_gas = disk.velocity(r)
         v_rel = ( self.get_relative_velocity(v, v_gas) if opt.considerRelativeVelocities
                         else self.get_relative_velocity(v, 0.) )
 
-        if gasInteraction == 'gasTorqueLossTypeI':
-            mach_number = sp.halo.mach_number(r)
-            Sigma = sp.halo.surface_density(r)
+        if self.gasInteraction == 'gasTorqueLossTypeI':
+            mach_number = disk.mach_number(r)
+            Sigma = disk.surface_density(r)
             Omega = sp.omega_s(r)
             Gamma_lin = Sigma*r**4 * Omega**2 * (sp.m2/sp.m1)**2 * mach_number**2
 
             F_gas = Gamma_lin * sp.m2/sp.m1 / r
 
-        elif gasInteraction == 'gasTorqueLossTypeII':
-            mach_number = sp.halo.mach_number(r)
-            Sigma = sp.halo.surface_density(r)
-            alpha = sp.halo.alpha if hasattr(sp.halo, 'alpha') else self.alpha # requires ShakuraSunyaevDisk atm
+        elif self.gasInteraction == 'gasTorqueLossTypeII':
+            mach_number = disk.mach_number(r)
+            Sigma = disk.surface_density(r)
+            alpha = disk.alpha if hasattr(disk, 'alpha') else self.alpha # requires ShakuraSunyaevDisk atm
 
             Omega = sp.omega_s(r)
             Gamma_vis = 3.*np.pi * alpha * Sigma * r**4 * Omega**2 / mach_number**2 if mach_number > 0. else 0.

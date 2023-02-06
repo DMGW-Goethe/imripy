@@ -1,14 +1,8 @@
 import numpy as np
-from scipy.integrate import solve_ivp, quad, simpson
-from scipy.interpolate import griddata, CloughTocher2DInterpolator
-from scipy.special import ellipeinc, ellipe, ellipkinc
-from scipy.spatial import Delaunay
-import collections.abc
-#import sys
+from scipy.integrate import solve_ivp, quad
+
 import time
 import imripy.constants as c
-import imripy.merger_system as ms
-import imripy.halo
 from . import forces
 
 class Classic:
@@ -42,7 +36,7 @@ class Classic:
         """
         def __init__(self, accuracy=1e-10, verbose=1, elliptic=True, m2_change=False,
                                     dissipativeForces=None, gwEmissionLoss = True, dynamicalFrictionLoss = True,
-                                    considerRelativeVelocities=False,
+                                    considerRelativeVelocities=False, progradeRotation = True,
                                     **kwargs):
             self.accuracy = accuracy
             self.verbose = verbose
@@ -56,6 +50,7 @@ class Classic:
                     dissipativeForces.append(forces.DynamicalFriction())
             self.dissipativeForces = dissipativeForces
             self.considerRelativeVelocities = considerRelativeVelocities
+            self.progradeRotation = progradeRotation
             self.additionalParameters = kwargs
 
 
