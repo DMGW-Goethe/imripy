@@ -43,7 +43,7 @@ def plotEvolution(sp, ev, ax_a=None, ax_e=None, label="", ax_ae=None, ax_m=None,
         color = l.get_c()
     if not ax_n is None:
         F, n = waveform.BrakingIndex(sp, ev)
-        l, = ax_n.plot(2*F/c.hz_to_invpc, n, color=color, label=label, linestyle=linestyle)
+        l, = ax_n.plot(2*F[2:-2]/c.hz_to_invpc, n[2:-2], color=color, label=label, linestyle=linestyle)
         color = l.get_c()
     return l
 
@@ -68,7 +68,7 @@ def plotGWcharacteristicStrain(sp, ev, ax_h, label="", acc=1e-13, harmonics=[2],
     for n in harmonics:
         wf = waveform.h_n(n, sp, ev, acc=acc)
         l, = ax_h.loglog(wf[0]/c.hz_to_invpc, 2.*wf[0]*np.abs(wf[1]), linestyle=next(linecycler),
-                                 label=r"$h^{(" + str(n) +")}_{c,+," + label +"}$", color=col, **kwargs)
+                                 label=label, color=col, **kwargs)
 
 
 def plotDeltaN(sp_0, ev_0, sp_1, ev_1, ax_dN, ax_di=None, n=2, acc=1e-13, plotFgw5year=False, min_dN=10., **kwargs):

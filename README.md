@@ -4,7 +4,7 @@ This code allows the simulation of an Intermediate Mass Ratio Inspiral (IMRI) by
 It allows to use different density profiles (such as DM spikes), and different interactions, such as dynamical friction with and without HaloFeedback models or accretion.
 
 #### Models
-This code has been used in our publications [2112.09586](https://arxiv.org/abs/2112.09586) and [2211,05145]([https://arxiv.org/pdf/2211.05145.pdf). See [this](https://github.com/DMGW-Goethe/imripy/blob/main/examples/circularizationDynamicalFrictionPaper.ipynb) and [this](https://github.com/DMGW-Goethe/imripy/blob/main/examples/AccretionDiskvsDarkMatter.ipynb) file respectively for plot generation. \
+This code has been used in our publications [2112.09586](https://arxiv.org/abs/2112.09586) and [2211.05145](https://arxiv.org/pdf/2211.05145.pdf). See [this](https://github.com/DMGW-Goethe/imripy/blob/main/examples/circularizationDynamicalFrictionPaper.ipynb) and [this](https://github.com/DMGW-Goethe/imripy/blob/main/examples/AccretionDiskvsDarkMatter.ipynb) file respectively for plot generation. \
 The code includes inspiral models from  \
 [9402014](https://arxiv.org/abs/gr-qc/9402014) - gravitational wave emission \
 [1408.3534](https://arxiv.org/abs/1408.3534.pdf) - dynamical friction \
