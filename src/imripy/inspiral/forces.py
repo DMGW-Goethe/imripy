@@ -22,11 +22,18 @@ class DissipativeForce:
     @staticmethod
     def get_relative_velocity(v_m2, v_gas):
         if isinstance(v_m2, tuple):
-            v_rel = (np.sign(v_m2[1]-v_gas[1])* np.sqrt( (v_m2[0] - v_gas[0])**2 + (v_m2[1] - v_gas[1])**2 ) if isinstance(v_gas, tuple)
-                                                        else np.sign(v_m2[1]-v_gas) * np.sqrt( v_m2[0]**2 + (v_m2[1] - v_gas)**2 ) )
+            if isinstance(v_gas, tuple):
+                v_rel = np.sqrt( (v_m2[0] - v_gas[0])**2 + (v_m2[1] - v_gas[1])**2 )
+                v_rel *= np.sign(v_m2[1] - v_gas[1]) if np.sign(v_m2[1]) == np.sign(v_gas[1]) else 1.
+            else:
+                v_rel =  np.sqrt( v_m2[0]**2 + (v_m2[1] - v_gas)**2 )
+                v_rel *= np.sign(v_m2[1] - v_gas) if np.sign(v_m2[1]) == np.sign(v_gas) else 1.
         else:
-            v_rel = (np.sign(v_m2-v_gas[1]) * np.sqrt( (v_gas[0])**2 + (v_m2 - v_gas[1])**2 ) if isinstance(v_gas, tuple)
-                                                        else  v_m2 - v_gas )
+            if isinstance(v_gas, tuple):
+                v_rel =  np.sqrt( (v_gas[0])**2 + (v_m2 - v_gas[1])**2 )
+                v_rel *= np.sign(v_m2 - v_gas[1]) if np.sign(v_m2) == np.sign(v_gas[1]) else 1.
+            else:
+                v_rel = v_m2 - v_gas
         return v_rel
 
     @staticmethod
@@ -312,7 +319,7 @@ class GasDynamicalFriction(DissipativeForce):
                 ln_Lambda =  7.15*H/R_acc
 
         F_df = 4.*np.pi * sp.m2**2 * disk.density(r) * ln_Lambda / v_rel**2  * np.sign(v_rel)
-        # print(v, v_gas, v_rel, F_df)
+        #print(v, v_gas, v_rel, F_df)
         return np.nan_to_num(F_df)
 
 
