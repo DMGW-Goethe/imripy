@@ -93,7 +93,7 @@ class Lisa(Detector):
             out : tuple
                 The left and right boundary of the bandwith
         """
-        return (1e-4 * c.hz_to_invpc, 1. * c.hz_to_invpc)
+        return (1e-5 * c.hz_to_invpc, 1. * c.hz_to_invpc)
 
     def NoiseSpectralDensity(self, f):
         """
