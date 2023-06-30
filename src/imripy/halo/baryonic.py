@@ -891,6 +891,60 @@ class DerdzinskiMayerDisk(BaryonicDisk):
         return f"DerdzinskiMayerDisk (M = {self.M}, M_dot={self.M_dot}, alpha={self.alpha})"
 
 
+class DoubleExponential(MatterHalo):
+    """
+    A class describing an axisymmetric, static, baryonic disk
+
+    Attributes:
+        r_min (float): A minimum radius below which the density is always 0, this is initialized to 0
+        M_d   (float): The disk mass paramter
+        R_d   (float): The disk scale length
+        z_d   (float): The disk scale height
+    """
+
+    def __init__(self, M_d, R_d, z_d):
+        """
+        The constructor for the MiyamotoNagaiDisk class
+
+        Parameters:
+            M_d : float
+                The disk mass paramter
+            R_d : float
+                The disk scale length
+            z_d : float
+                The disk scale height
+        """
+        self.M_d = M_d
+        self.R_d = R_d
+        self.z_d = z_d
+
+    def density(self, r, z=0.):
+        """
+        The density function of the disk, see eq (6) of https://arxiv.org/pdf/2303.12838.pdf
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the density
+            z : float or array_like (optional)
+                The height at which to evaluate the density (in cylindrical coordinates)
+
+        Returns:
+            out : float or array_like (depending on r)
+                The density at the radius r, height z
+        """
+        return self.M_d / 4. / np.pi / self.z_d / self.R_d**2  * np.exp(-r / self.R_d - np.abs(z) / self.z_d )
+
+    def __str__(self):
+        """
+        Gives the string representation of the object
+
+        Returns:
+            out : string
+                The string representation
+        """
+        return f"DoubleExponentialDisk: M_d={self.M_d}, R_d={self.R_d}, z_d={self.z_d}"
+
+
 
 
 class MiyamotoNagaiDisk(MatterHalo):
