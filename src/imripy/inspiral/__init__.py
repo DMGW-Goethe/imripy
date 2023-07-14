@@ -1,3 +1,3 @@
 from . import forces
-from .inspiral import *
+from .classic import *
 # from .halofeedback import *

@@ -371,12 +371,15 @@ class Classic:
         fin_reached = lambda t,y, *args: y[0] - a_fin/a_scale
         fin_reached.terminal = True
 
+        inside_BH = lambda t,y, *args: y[0]*a_scale * (1. - y[1]) - 2*sp.m1  # for a(1-e) < 2m_1
+        inside_BH.terminal = True
+
         # Initial conditions
         y_0 = np.array([a_0 / a_scale, e_0, sp.m2/m_scale])
 
         # Evolve
         tic = time.perf_counter()
-        Int = solve_ivp(dy_dt, [t_0/t_scale, (t_0+t_fin)/t_scale], y_0, dense_output=True, args=(sp,opt), events=fin_reached, max_step=t_step_max/t_scale,
+        Int = solve_ivp(dy_dt, [t_0/t_scale, (t_0+t_fin)/t_scale], y_0, dense_output=True, args=(sp,opt), events=[fin_reached, inside_BH], max_step=t_step_max/t_scale,
                                                                                         method = 'RK45', atol=opt.accuracy, rtol=opt.accuracy)
         toc = time.perf_counter()
 
