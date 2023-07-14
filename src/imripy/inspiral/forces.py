@@ -167,6 +167,65 @@ class DissipativeForce:
     def __str__(self):
         return self.name
 
+class StochasticForce(DissipativeForce):
+    """
+    This class extends the dissipative force class
+    to include a stochastic component that induces Brownian motion
+    in the energy and angular momentum space
+
+    See the Stochastic Solver for a thorough description
+    """
+    name = "StochasticForce"
+
+    def dE_dW(self, sp, a, e, opt):
+        """
+        Placeholder function that models the Brownian motion in energy.
+
+        Parameters:
+            sp (SystemProp) : The object describing the properties of the inspiralling system
+            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
+            e  (float)      : The eccentricity of the Keplerian orbit
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+
+        Returns:
+            out : float
+                The strength of the Brownian motion in Energy
+        """
+        pass
+
+    def dL_dw(self, sp, a, e, opt):
+        """
+        Placeholder function that models the Brownian motion in angular momentum.
+
+        Parameters:
+            sp (SystemProp) : The object describing the properties of the inspiralling system
+            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
+            e  (float)      : The eccentricity of the Keplerian orbit
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+
+        Returns:
+            out : float
+                The strength of the Brownian motion in angular momentum
+        """
+        pass
+
+    def dE_dL_cov(self, sp, a, e, opt):
+        """
+        Placeholder function that models the covariance between the Brownian motion in Energy and angular momentum
+
+        Parameters:
+            sp (SystemProp) : The object describing the properties of the inspiralling system
+            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
+            e  (float)      : The eccentricity of the Keplerian orbit
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+
+        Returns:
+            out : float
+                The covariance
+        """
+        pass
+
+
 class GWLoss(DissipativeForce):
     name = "GWLoss"
 
@@ -534,3 +593,41 @@ class GasInteraction(DissipativeForce):
 
         return F_gas
 
+class StellarDiffusion(StochasticForce):
+    name = "Stellar Diffusion"
+
+    def __init__(self, stellarDistribution : imripy.halo.MatterHalo):
+        super().__init__()
+        self.stellarDistribution = stellarDistribution
+
+
+    def dE_dt(self, sp, a, e, opt):
+        """
+
+        """
+        return 0.
+
+    def dL_dt(self, sp, a, e, opt):
+        """
+
+        """
+        return 0.
+
+    def dE_dW(self, sp, a, e, opt):
+        """
+
+        """
+        return 0.
+
+
+    def dL_dW(self, sp, a, e, opt):
+        """
+
+        """
+        return 0.
+
+    def dE_dL_cov(self, sp, a, e, opt):
+        """"
+
+        """
+        return 0.
