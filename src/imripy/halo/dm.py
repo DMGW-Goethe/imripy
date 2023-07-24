@@ -100,7 +100,7 @@ class NFW(MatterHalo):
         """
         return f"NFW(rho_s={self.rho_s:0.1e}, r_s={self.r_s:0.1e})"
 
-class Spike(MatterHalo):
+class Spike(MatterHaloDF):
     """
     A class describing a spike halo profile
     The density is given by
@@ -113,7 +113,7 @@ class Spike(MatterHalo):
         alpha     (float): The power-law index of the spike profile, with condition 0 < alpha < 3
     """
 
-    def __init__(self, rho_spike, r_spike, alpha):
+    def __init__(self, rho_spike, r_spike, alpha, M_bh = 0.):
         """
         The constructor for the Spike class
 
@@ -129,6 +129,7 @@ class Spike(MatterHalo):
         self.rho_spike = rho_spike
         self.alpha= alpha
         self.r_spike = r_spike
+        self.M_bh = M_bh
 
     def density(self, r):
         """
@@ -162,6 +163,36 @@ class Spike(MatterHalo):
         return np.where(r > self.r_min,
                             spikeMass(r) - spikeMass(self.r_min),
                             0.)
+
+    def potential(self, r):
+        """
+        The underlying potential that is assumed for the distribution
+
+        Parameters:
+            r : float or array_like
+                The radii(us) of interest
+
+        Returns:
+            out : float or array_like
+                The potential at the given radii(us)
+        """
+        return self.M_bh / r
+
+    def f(self, eps):
+        """
+        The distribution function of the Spike
+
+        Parameters:
+            Eps : float or array_like
+                The relative energies(y) of interest
+
+        Returns:
+            out : float or array_like
+                The value(s) of the distribution function at the given energies
+        """
+        return (self.rho_spike * self.alpha*(self.alpha-1.)/(2.*np.pi)**(3./2.)
+                * (self.r_spike/self.M_bh)**self.alpha * gamma(self.alpha-1.)/gamma(self.alpha-1./2.)
+                * eps**(self.alpha-3./2.) )
 
     def FromSpikedNFW(snfw):
         """
@@ -203,7 +234,7 @@ class Spike(MatterHalo):
         k = (3. - alpha) * 0.2**(3. - alpha)/2./np.pi
         rho_spike = ( rho_6 * (k*M_bh)**(-alpha/3.) * r_6**alpha )**(3./(3.-alpha))
         r_spike = (k*M_bh/rho_spike)**(1./3.)
-        return Spike(rho_spike, r_spike, alpha)
+        return Spike(rho_spike, r_spike, alpha, M_bh=M_bh)
 
 
     def __str__(self):
@@ -214,7 +245,7 @@ class Spike(MatterHalo):
             out : string
                 The string representation
         """
-        return f"Spike(rho_spike={self.rho_spike:0.1e}, r_spike={self.r_spike:0.1e}, alpha={self.alpha:0.1e})"
+        return f"Spike(rho_spike={self.rho_spike:0.1e}, r_spike={self.r_spike:0.1e}, alpha={self.alpha:0.1e}, M_bh={self.M_bh:0.1e})"
 
 class RelativisticSpike(MatterHalo):
     """
