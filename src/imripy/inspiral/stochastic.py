@@ -231,7 +231,7 @@ class Stochastic:
                     tic = time.perf_counter()
 
                 da_dW, dE_dW = Stochastic.da_dW(self.sp, a, e, opt=self.opt, return_dE_dW=True)
-                de_dW = Stochastic.de_dW(self.sp, a, e, dE_dt=dE_dt, opt=self.opt) if self.opt.elliptic else 0.
+                de_dW = Stochastic.de_dW(self.sp, a, e, dE_dW=dE_dW, opt=self.opt) if self.opt.elliptic else 0.
                 dm2_dW = 0.
 
                 if self.opt.verbose > 1:

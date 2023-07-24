@@ -1,5 +1,6 @@
 import numpy as np
-from scipy.integrate import quad
+from scipy.integrate import quad, odeint
+from scipy.interpolate import interp1d
 import collections
 
 import imripy.constants as c
@@ -594,40 +595,201 @@ class GasInteraction(DissipativeForce):
         return F_gas
 
 class StellarDiffusion(StochasticForce):
+    """
+    The class for modeling stellar diffusion effects in an IMRI. There is an averaged loss and a stochastic component to this
+    This is modeled after https://arxiv.org/pdf/2304.13062.pdf
+
+    Attributes:
+        stellarDistribution : imripy.halo.MatterHaloDF
+            Object describing the stellar distribution
+        E_m_s : float
+            The first mass moment of the stellar distribution
+        E_m_s2 : float
+            The second mass moment of the stellar distribution
+        CoulombLogarithm : float
+            The CoulombLogarithm describing the strength of the scattering
+        m : float
+            The mass of the secondary object subject to stellar diffusion
+
+    """
     name = "Stellar Diffusion"
 
-    def __init__(self, stellarDistribution : imripy.halo.MatterHalo):
+    def __init__(self, stellarDistribution : imripy.halo.MatterHaloDF, sp=None, CoulombLogarithm=None, E_m_s = c.solar_mass_to_pc, E_m_s2 = c.solar_mass_to_pc, m=None):
+        """
+        The constructor for the StellarDiffusion class
+        The values are initialized according to https://arxiv.org/pdf/2304.13062.pdf if not provided
+
+        Parameters:
+            istellarDistribution : imripy.halo.MatterHaloDF
+                Object describing the stellar distribution
+            sp : (optional) imripy.merger_system.SystemProp
+                The system prop object describing the merger system - If provided, sp.m1 and sp.m2 are used to initialize some values
+            E_m_s : (optional) float
+                The first mass moment of the stellar distribution
+            E_m_s2 :(optional)  float
+                The second mass moment of the stellar distribution
+            CoulombLogarithm : (optional) float
+                The CoulombLogarithm describing the strength of the scattering - either this or sp must be provided
+            m : (optional) float
+                The mass of the secondary object subject to stellar diffusion - either this or sp must be provided
+        """
         super().__init__()
         self.stellarDistribution = stellarDistribution
+
+        self.E_m_s = E_m_s
+        self.E_m_s2 = E_m_s2
+        self.m = m or sp.m2
+        self.CoulombLogarithm = CoulombLogarithm or np.log(0.4 * sp.m1 / self.E_m_s)
+
+        self.calc_velocity_diffusion_coeff()
+
+
+
+    def calc_velocity_diffusion_coeff(self):
+        """
+        Calculates the velocity diffusion coefficients and saves them in the class for later use as a lambda function.
+        This should only be needed once (or when the distribution function stellarDistribution.f changes)
+        Eq (24)-(28) from https://arxiv.org/pdf/2304.13062.pdf
+        """
+        v_grid = np.geomspace(1e-10, 1., 100) # Make appropriate
+
+        E_1_int = quad( lambda v_int : v_int * self.stellarDistribution.f(v_int), 0, 1, limit=100)[0]
+        E_1 = interp1d(v_grid, E_1_int / v_grid, kind='cubic', bounds_error=True)
+
+        F_2_int = odeint( lambda a, v_int : v_int**2 * self.stellarDistribution.f(v_int), 0, v_grid )[:,0]
+        F_2 = interp1d(v_grid, F_2_int / v_grid**2, kind='cubic', bounds_error=True)
+
+        F_4_int = odeint( lambda a, v_int : v_int**4 * self.stellarDistribution.f(v_int), 0, v_grid )[:,0]
+        F_4 = interp1d(v_grid, F_4_int / v_grid**4, kind='cubic', bounds_error=True)
+
+        E_v_par_pref =  -16.*np.pi**2 *(self.E_m_s2 + self.m * self.E_m_s ) * self.CoulombLogarithm
+        self.E_v_par = lambda v: E_v_par_pref * F_2(v)
+
+        E_v_par2_pref = 32./3.*np.pi**2 * self.E_m_s2 * self.CoulombLogarithm
+        self.E_v_par2 = lambda v: E_v_par2_pref * v * (F_4(v) + E_1(v))
+
+        E_v_ort2_pref = E_v_par2_pref
+        self.E_v_ort2 = lambda v: E_v_ort2_pref * v * (3*F_2(v) - F_4(v) + 2*E_1(v))
+
+        #n = 50
+        #print(v_grid[n], E_1(v_grid[n]), F_2(v_grid[n]), F_4(v_grid[n]),
+        #                self.E_v_par(v_grid[n]), self.E_v_par2(v_grid[n]), self.E_v_ort2(v_grid[n]))
 
 
     def dE_dt(self, sp, a, e, opt):
         """
+        Calculates the average energy loss due to stellar diffusion.
+        Eq (14) from https://arxiv.org/pdf/2304.13062.pdf
 
+        Parameters:
+            sp (SystemProp) : The object describing the properties of the inspiralling system
+            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
+            e  (float)      : The eccentricity of the Keplerian orbit
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+
+        Returns:
+            out : float
+                The energy loss due to stellar diffusion
         """
-        return 0.
+        def integrand(phi):
+            r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
+            deps = v * self.E_v_par(v) + self.E_v_par2(v) / 2. + self.E_v_ort2(v) / 2.
+            #print(v, deps, self.E_v_par(v), self.E_v_par2(v), self.E_v_ort2(v) )
+            return deps / (1.+e*np.cos(phi))**2
+        #plt.plot(np.linspace(0, np.pi), np.array([integrand(phi) for phi in np.linspace(0, np.pi)]))
+        dE_dt = (1.-e**2)**(3./2.) * quad(integrand, 0., np.pi, limit=50)[0]
+        return - 2.* self.m * dE_dt
 
     def dL_dt(self, sp, a, e, opt):
         """
+        Calculates the average angular momentum loss due to stellar diffusion.
+        Eq (16) from https://arxiv.org/pdf/2304.13062.pdf
 
+        Parameters:
+            sp (SystemProp) : The object describing the properties of the inspiralling system
+            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
+            e  (float)      : The eccentricity of the Keplerian orbit
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+
+        Returns:
+            out : float
+                The angular momentum loss due to stellar diffusion
         """
-        return 0.
+        J = np.sqrt(sp.m1**2 / sp.m_total() * a * (1.-e**2))
+        def integrand(phi):
+            r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
+            dJ = J / v * self.E_v_par(v) + r**2 / J / 4. * self.E_v_ort2(v)
+            return dJ / (1.+e*np.cos(phi))**2
+        dL_dt = (1.-e**2)**(3./2.) * quad(integrand, 0., np.pi, limit=50)[0]
+        return -2.* self.m * dL_dt
 
     def dE_dW(self, sp, a, e, opt):
         """
+        Calculates the variance of energy loss due to stellar diffusion.
+        Eq (15) from https://arxiv.org/pdf/2304.13062.pdf
 
+        Parameters:
+            sp (SystemProp) : The object describing the properties of the inspiralling system
+            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
+            e  (float)      : The eccentricity of the Keplerian orbit
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+
+        Returns:
+            out : float
+                The variance of energy loss due to stellar diffusion
         """
-        return 0.
+        def integrand(phi):
+            r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
+            deps2 = v**2 *  self.E_v_par2(v)
+            return deps2 / (1.+e*np.cos(phi))**2
+        dE_dW = (1.-e**2)**(3./2.) * quad(integrand, 0., np.pi, limit=50)[0]
+        return -2.* self.m * dE_dW
 
 
     def dL_dW(self, sp, a, e, opt):
         """
+        Calculates the variance of angular momentum loss due to stellar diffusion.
+        Eq (17) from https://arxiv.org/pdf/2304.13062.pdf
 
+        Parameters:
+            sp (SystemProp) : The object describing the properties of the inspiralling system
+            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
+            e  (float)      : The eccentricity of the Keplerian orbit
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+
+        Returns:
+            out : float
+                The variance of angular momemtum loss due to stellar diffusion
         """
-        return 0.
+        J = np.sqrt(sp.m1**2 / sp.m_total() * a * (1.-e**2))
+        def integrand(phi):
+            r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
+            dJ2 = J**2 / v**2 * self.E_v_par2(v) + 1./2. *( r**2 - J**2/v**2) * self.E_v_ort2(v)
+            return dJ2 / (1.+e*np.cos(phi))**2
+        dL_dW = (1.-e**2)**(3./2.) * quad(integrand, 0., np.pi, limit=50)[0]
+        return -2.* self.m * dL_dW
 
     def dE_dL_cov(self, sp, a, e, opt):
-        """"
+        """
+        Calculates the covariance of energy and angular momentum loss due to stellar diffusion.
+        Eq (18) from https://arxiv.org/pdf/2304.13062.pdf
+
+        Parameters:
+            sp (SystemProp) : The object describing the properties of the inspiralling system
+            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
+            e  (float)      : The eccentricity of the Keplerian orbit
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+
+        Returns:
+            out : float
+                The covariance of energy and angular momemtum loss due to stellar diffusion
 
         """
-        return 0.
+        J = np.sqrt(sp.m1**2 / sp.m_total() * a * (1.-e**2))
+        def integrand(phi):
+            r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
+            dJdeps = J *self.E_v_par2(v)
+            return dJdeps / (1.+e*np.cos(phi))**2
+        dE_dL_cov = (1.-e**2)**(3./2.) * quad(integrand, 0., np.pi, limit=50)[0]
+        return -2.* self.m * dE_dL_cov
+
