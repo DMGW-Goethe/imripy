@@ -198,10 +198,121 @@ class InterpolatedHalo(MatterHalo):
 
 
 
+class MatterHaloDF(MatterHalo):
+    """
+    A placeholder class describing a spherically symmetric halo profile given a distribution function f inside a potential Phi
+    The density is given by
+        rho(r) = 4 \pi \int_0^v_max   v**2 * f(Phi(r) - v**2 /2)  dv
+    """
 
-class DynamicSS(MatterHalo):
+    def __init__(self):
+        """
+        The constructor for the MatterHaloDF class
+
+        """
+        MatterHalo.__init__(self)
+
+    def f(self, Eps):
+        """
+        This function is a placeholder for the distribution function
+
+        Parameters:
+            Eps : float or array_like
+
+        Returns:
+            out : float or array_like
+                The value(s) of the distribution function at the given energy densities
+        """
+        pass
+
+    def potential(self, r):
+        """
+        This is a placeholder function for the potential
+
+        Parameters:
+            r : float or array_like
+
+        Returns:
+            out : float or array_like
+                The value(s) of the potential at the given radius
+        """
+        pass
+
+
+    def stateDensity(self, Eps):
+        """
+        This function returns the state density for a given Eps
+        The state density is given by
+            g(Eps) = 16 \pi^2 \int_0^r_{Eps} dr r^2 \sqrt{2 \Phi(r) - Eps}
+        with the radius r_{Eps} = \Phi^{-1}(Eps)
+
+        Parameters:
+            Eps : float or array_like
+                The relative energy(s) of interest
+
+        Returns:
+            out : float or array_like
+                The corresponding state density(s)
+        """
+        pass
+        '''
+        # Alternative calculaltion without interpolation
+        if not isinstance(Eps, (collections.Sequence, np.ndarray)):
+            return 16.*np.pi**2 * quad(lambda r: r**2 * np.sqrt(2.*self.potential(r) - 2.*Eps), 0., self.r_of_Eps(Eps))[0]
+        return 16.*np.pi**2 *np.array([quad(lambda r: r**2 * np.sqrt(2.*self.potential(r) - 2.*Eps), 0., self.r_of_Eps(Eps))[0]  for Eps in Eps])
+        '''
+
+    def density(self, r, v_max = None):
+        """
+        The density function of the halo depending on the distribution function
+        The density is given by
+            rho(r) = 4 \pi \int_0^v_max   v**2 * f(Phi(r) - v**2 /2)  dv
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the density
+            v_max : optional, float or array_like
+                The maximum velocity up to which particles will be considered. Either a single value or array_like with the same size as r.
+                The default value is v_max = \sqrt{2\Phi(r)} for a given radius.
+
+        Returns:
+            out : float or array_like (depending on r)
+                The density at the radius r
+
+        TODO:
+            Make design choice of integration method and test them
+        """
+
+        if v_max is None:
+            v_max = np.sqrt(2*self.potential(r))
+        if not isinstance(r, (collections.Sequence, np.ndarray)):
+            v2_list = np.linspace(0., v_max**2, 3000)
+            f_list = self.f(self.potential(r) - 0.5*v2_list)
+            return 4.*np.pi*simps(v2_list * f_list, x=np.sqrt(v2_list))
+            #return 4.*np.pi*quad(lambda v: v**2 * self.f(self.potential(r) - v**2 /2.), 0., v_max, limit=200)[0]
+
+        if not isinstance(v_max, (collections.Sequence, np.ndarray)):
+            v_max = np.ones(len(r))*v_max
+        v_max = np.clip(v_max, 0., np.sqrt(2*self.potential(r)))
+        return np.array([self.density(r, v) for r,v in zip(r, v_max) ])
+        #return 4.*np.pi*np.array([quad(lambda v: v**2 * self.f(self.potential(r[i]) - v**2 /2.), 0., v_max[i], limit=200)[0] for i in range(len(r))])
+
+
+    def __str__(self):
+        """
+        Gives the string representation of the object
+
+        Returns:
+            out : string
+                The string representation
+        """
+        return "MatterHaloDF"
+
+
+class DynamicSS(MatterHaloDF):
     """
     A class describing a spherically symmetric dynamic halo profile given a distribution function f inside a potential Phi
+    Here, the function f is interpolated from a grid in f_grid, Eps_grid
     The density is given by
         rho(r) = 4 \pi \int_0^v_max   v**2 * f(Phi(r) - v**2 /2)  dv
 
@@ -211,9 +322,10 @@ class DynamicSS(MatterHalo):
         Eps_grid (array_like): The grid of relativ energy on which the distribution function f is given
         f_grid   (array_like): The corresponding values of the distribution function f
         potential(callable(r)): A reference to a callable function of r that gives the potential Phi
+        interpolate_density: Whether to interpolate the density once and call that instead of recomputing  # TODO
     """
 
-    def __init__(self, Eps_grid, f_grid, potential):
+    def __init__(self, Eps_grid, f_grid, potential, interpolate_density=False):
         """
         The constructor for the DynamicSS class
 
@@ -224,12 +336,16 @@ class DynamicSS(MatterHalo):
                 The corresponding values of the distribution function f
             potential : callable(r)
                 A reference to a callable function of r that gives the potential Phi
+            interpolate_density : Boolean
+                Whether to precompute and later interpolate the density function instead of doing the integral over f each time
         """
-        MatterHalo.__init__(self)
+        MatterHaloDF.__init__(self)
         self.Eps_grid = Eps_grid
         self.f_grid = f_grid
         self.potential = potential
+        self.interpolate_density = interpolate_density
         self.update_Eps()
+
 
     def f(self, Eps):
         """
@@ -329,24 +445,11 @@ class DynamicSS(MatterHalo):
         Returns:
             out : float or array_like (depending on r)
                 The density at the radius r
-
-        TODO:
-            Make design choice of integration method and test them
         """
-
-        if v_max is None:
-            v_max = np.sqrt(2*self.potential(r))
-        if not isinstance(r, (collections.Sequence, np.ndarray)):
-            v2_list = np.linspace(0., v_max**2, 3000)
-            f_list = self.f(self.potential(r) - 0.5*v2_list)
-            return 4.*np.pi*simps(v2_list * f_list, x=np.sqrt(v2_list))
-            #return 4.*np.pi*quad(lambda v: v**2 * self.f(self.potential(r) - v**2 /2.), 0., v_max, limit=200)[0]
-
-        if not isinstance(v_max, (collections.Sequence, np.ndarray)):
-            v_max = [v_max]*len(r)
-        v_max = np.clip(v_max, 0., np.sqrt(2*self.potential(r)))
-        return np.array([self.density(r, v) for r,v in zip(r, v_max) ])
-        #return 4.*np.pi*np.array([quad(lambda v: v**2 * self.f(self.potential(r[i]) - v**2 /2.), 0., v_max[i], limit=200)[0] for i in range(len(r))])
+        if self.interpolate_density:
+            pass # TODO
+        else:
+            return super().density(r, v_max)
 
     def FindEncompassingRBounds(Eps_grid, potential):
         left = -5.; right=5.
@@ -357,7 +460,7 @@ class DynamicSS(MatterHalo):
         return (10**left, 10**right)
 
 
-    def FromStatic(Eps_grid, halo, extPotential):
+    def EddingtonInversion(Eps_grid, halo, extPotential):
         """
         This function calculates the distribution function f, given a grid in relative energy, a density profil and the potential in which this is located.
         It implements the Eddington inversion described by [Jo Bovy](http://astro.utoronto.ca/~bovy/AST1420/notes/notebooks/05.-Equilibria-Spherical-Collisionless-Systems.html#Ergodic-DFs-and-the-Eddington-inversion-formula)
@@ -381,7 +484,6 @@ class DynamicSS(MatterHalo):
         # find the right r grid for calculations, such that the potential encompasses the Eps_grid
         left, right = DynamicSS.FindEncompassingRBounds(Eps_grid, extPotential)
         r = np.geomspace(left, right, int(10*np.log10(right/left)))
-        # calculate f according to Eddington inversion
         Phi = extPotential(r)
 
         ''' # First possible method
@@ -398,8 +500,32 @@ class DynamicSS(MatterHalo):
         f_grid[np.where(f_grid < 0.)] =  0.
         return DynamicSS(Eps_grid, f_grid, extPotential)
 
+    def FromStatic(Eps_grid, halo, extPotential=None):
+        """"
+        This function takes a MatterHalo or MatterHaloDF object and makes a grid in f over the given Eps_grid
+        If it is a MatterHaloDF object, f is taken from the analytic equations.
+        If it is a MatterHalo object, f is calculated through the Eddingtion inversion procedure, see the EddingtonInversion function
+
+        Parameters:
+            Eps_grid : array_like
+                The grid in relative energy on which to calculate the distribution function
+            halo : MatterHalo(DF) object
+                The MatterHalo object from which to extract the distribution function
+            extPotential : (optional) callable(r)
+                The potential in which the density profile is to be inverted - ignored if provided by MatterHaloDF object
+
+        Returns:
+            out : DynamicSS object
+                The DynamicSS object with the corresponding distribution function on the grid in relative energy
+        """
+        if hasattr(halo, "f"):
+            return DynamicSS(Eps_grid, halo.f(Eps_grid), halo.potential if hasattr(halo, "potential") else extPotential)
+        else:
+            return DynamicSS.EddingtonInversion(Eps_grid, halo, extPotential=extPotential)
+
     def FromSpike(Eps_grid, sp, spike):
         """
+        Deprecated, use FromStatic method
         This function implements the analytically known distribution function f of a power-law spike, given a grid in relative energy.
         The analytic equation is only valid in a central potential of m1, which is extracted from the SystemProp object.
 
@@ -416,11 +542,8 @@ class DynamicSS(MatterHalo):
                 The DynamicSS object with the corresponding distribution function on the grid in relative energy
 
         """
-        extPotential = lambda r: sp.m1/r
-        f_grid =  (spike.rho_spike * spike.alpha*(spike.alpha-1.)/(2.*np.pi)**(3./2.)
-            * (spike.r_spike/sp.m1)**spike.alpha * gamma(spike.alpha-1.)/gamma(spike.alpha-1./2.)
-            * Eps_grid**(spike.alpha-3./2.) )
-        return DynamicSS(Eps_grid, f_grid, extPotential)
+        spike.M_bh = sp.m1
+        return DynamicSS.FromStatic(Eps_grid, spike)
 
     def __str__(self):
         """

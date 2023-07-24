@@ -225,7 +225,7 @@ class DynamicalFriction(DissipativeForce):
         The self.relativisticCorrections parameter allows the use of the correction factor as given by eq (15) of
                 https://arxiv.org/pdf/2204.12508.pdf ( except for the typo in the gamma factor )
         The self.useHaloPhaseSpaceDescription parameter allows to use not the total dark matter density at r, but uses the halo phase space description
-            such that only particles below a given v_max scatter. This option requires sp.halo to be of type DynamicSS.
+            such that only particles below a given v_max scatter. This option requires sp.halo to be of type MatterHaloDF.
             v_max can be provided via self.v_max. If v_max is None, it is taken to be the orbital velocity.
 
         Parameters:
@@ -257,7 +257,7 @@ class DynamicalFriction(DissipativeForce):
                 v_max = opt.additionalParameters['v_max']
             else:
                 v_max = self.v_max
-            density = halo.density(r, v_max=(v_max if not v_max is None else np.abs(v_rel)))
+            density = imripy.halo.MatterHaloDF.density(halo, r, v_max=(v_max if not v_max is None else np.abs(v_rel)))
         else:
             density = halo.density(r) * self.dmPhaseSpaceFraction
 
