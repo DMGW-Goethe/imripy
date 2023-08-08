@@ -55,114 +55,60 @@ class Stochastic:
             s += "}"
             return s
 
-    def dE_dW(sp, a, e=0., opt=EvolutionOptions()):
+
+    def dEdL_diffusion(sp, a, e, opt=EvolutionOptions()):
         """
-        The function gives the stochastic energy loss of the secondary object
+        The function gives the diffusion matrix of the SDE for the  energy and angular momentum
+        The variances are on the diagonal and the covariance on the off-diagonal
+        Calls each stochastic force and gets its diffusion matrix. For normally distributed noise, the (co)variances are additive.
 
         Parameters:
             sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
+            a  (float)      : The semimajor axis of the Keplerian orbit
             e  (float)      : The eccentricity of the Keplerian orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : float
-                The stochastic energy loss
+                The diffusion matrix of the SDE
         """
-        dE_dW_tot = 0.
-        dE_dW_out = ""
+        dEdL_cov_tot = np.zeros(shape=(2,2))
+        dEdL_cov_out = ""
         for df in opt.stochasticForces:
-            dE_dW = df.dE_dW(sp, a, e, opt)
-            dE_dW_tot += dE_dW
+            dEdL_cov = df.dEdL_diffusion(sp, a, e, opt)
+            dEdL_cov_tot += dEdL_cov
             if opt.verbose > 2:
-                dE_dW_out += f"{df.name}:{dE_dW}, "
+                dEdL_cov_out += f"{df.name}:{dEdL_cov}, "
 
         if opt.verbose > 2:
-            print(dE_dW_out)
-        return  dE_dW_tot
+            print(dEdL_cov_out)
+        return dEdL_cov_tot
 
 
-    def dL_dW(sp, a, e, opt=EvolutionOptions()):
+
+    def dade_diffusion(sp, a, e, opt=EvolutionOptions()):
         """
-        The function gives the stochastic angular momentum loss of the secondary object
+        This function gives the diffusion matrix of the SDE for the semimajor axis and eccentricity
+        by taking the diffusion matrix for E and L and transforming it to a and e with the Jacobian
 
         Parameters:
             sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
+            a  (float)      : The semimajor axis of the Keplerian orbit
             e  (float)      : The eccentricity of the Keplerian orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : float
-                The stochastic angular momentum loss
+                The diffusion matrix of the SDE
         """
-        dL_dW_tot = 0.
-        dL_dW_out = ""
-        for df in opt.stochasticForces:
-            dL_dW = df.dL_dW(sp, a, e, opt)
-            dL_dW_tot += dL_dW
-            if opt.verbose > 2:
-                dL_dW_out += f"{df.name}:{dL_dW}, "
-
-        if opt.verbose > 2:
-            print(dL_dW_out)
-        return  dL_dW_tot
-
-
-    def da_dW(sp, a, e=0., opt=EvolutionOptions, return_dE_dW=False):
-        """
-        The function gives the diffusion term for the semimajor axis
-
-        Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
-            opt (EvolutionOptions): The options for the evolution of the differential equations
-            return_dE_dW (bool)    : Whether to return dE_dW in addition to da_dt, to save computation time later
-
-        Returns:
-            da_dW : float
-                The diffusion term for the semimajor axis
-            dE_dW : float
-                The diffusion term for the orbital energy
-        """
-        dE_dW = Stochastic.dE_dW(sp, a, e, opt)
-
-        dE_orbit_da = Classic.dE_orbit_da(sp, a, e, opt)
-
-        if return_dE_dW:
-            return dE_dW / dE_orbit_da, dE_dW
-
-        return    ( dE_dW / dE_orbit_da )
-
-
-    def de_dW(sp, a, e, dE_dW=None, opt=EvolutionOptions()):
-        """
-        The function gives the diffusion term for the eccentricity
-
-        Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
-            dE_dW (float)   : Optionally, the dE_dW value if it was computed previously
-            opt (EvolutionOptions): The options for the evolution of the differential equations
-
-        Returns:
-            de_dW : float
-                The diffusion term for the eccentricity
-        """
-        if e <= 0. or not opt.elliptic:
-            return 0.
-
-        dE_dW = Stochastic.dE_dW(sp, a, e, opt) if dE_dW is None else dE_dW
         E = Classic.E_orbit(sp, a, e, opt)
-        dL_dW = Stochastic.dL_dW(sp, a, e, opt)
         L = Classic.L_orbit(sp, a, e, opt)
 
-        if opt.verbose > 2:
-            print("dE_dW/E=", dE_dW/E, "2dL_dW/L=", 2.*dL_dW/L, "diff=", dE_dW/E + 2.*dL_dW/L )
+        dade_dEdL = np.array([[- a / E, 0.], [ (e**2 - 1)/ (2.*e*E) , (e**2 - 1)/ (e*L)]] ) # The Jacobian del(a,e)/del(E,L)
 
-        return - (1.-e**2)/2./e *(  dE_dW/E + 2. * dL_dW/L   )
+        dEdL_cov = Stochastic.dEdL_diffusion(sp, a, e, opt=opt)
+
+        return dade_dEdL * dEdL_cov
 
 
 
@@ -203,10 +149,10 @@ class Stochastic:
         if a_fin == 0.:
             a_fin = sp.r_isco()     # Stop evolution at r_isco
 
-        # set scales to get rescale integration variables
+        # set scales to get rescale integration variables ?
+        state_size = 2  # we integrate a, e
         a_scale = a_0
         t_scale = t_fin
-        m_scale = sp.m2 if opt.m2_change else 1.
         #torch.set_default_tensor_type(torch.DoubleTensor)
 
         if opt.verbose > 0:
@@ -215,58 +161,55 @@ class Stochastic:
         class SDE(torchsde.SDEStratonovich):
 
             def __init__(self):
-                super().__init__(noise_type = 'diagonal')  # TODO : Implement covariance
+                super().__init__(noise_type = 'general')
                 self.sp = sp
                 self.opt = opt
 
 
             def dy(self, t, y):
                 """
-                This function is like the dy_dt in the classic case, it takes a single set of a, e, m2 and calculates dy_dt and dy_dW
+                This function is like the dy_dt in the classic case, it takes a single set of a, e and calculates dy_dt and dy_dW
 
                 Parameters:
                     t : float
                         The (scaled) time variable (isn't generally used)
-                    y : np.array (1D!)
-                        Contains the current integration state for a single iteration of a, e, m2
+                    y : np.array (1D)
+                        Contains the current integration state for a single iteration of a, e
 
                 Returns
                     dy_dt : np.array (1D)
                         The drift term of the SDE
-                    dy_dW : np.array (1D)
+                    dy_dW : np.array (2D)
                         The diffusion term of the SDE
                 """
                 t = t*t_scale
                 # Unpack array
-                a, e, m2 = np.array(y)
-                a *= a_scale; sp.m2 = m2 * m_scale if self.opt.m2_change else sp.m2
+                a, e = np.array(y)
+                a *= a_scale
 
                 if opt.verbose > 1:
                     tic = time.perf_counter()
 
                 da_dt, dE_dt = Classic.da_dt(self.sp, a, e, opt=self.opt, return_dE_dt=True)
                 de_dt = Classic.de_dt(self.sp, a, e, dE_dt=dE_dt, opt=self.opt) if self.opt.elliptic else 0.
-                dm2_dt = Classic.dm2_dt(self.sp, a, e, self.opt) if self.opt.m2_change else 0.
 
-                da_dW, dE_dW = Stochastic.da_dW(self.sp, a, e, opt=self.opt, return_dE_dW=True)
-                de_dW = Stochastic.de_dW(self.sp, a, e, dE_dW=dE_dW, opt=self.opt) if self.opt.elliptic else 0.
-                dm2_dW = 0.
+                dy_dW = Stochastic.dade_diffusion(sp, a, e, opt=opt)
 
                 if self.opt.verbose > 1:
                     toc = time.perf_counter()
-                    print(rf"Step: t={t : 0.1e}, a={a : 0.1e}({a/sp.r_isco() : 0.1e} r_isco), da/dt={da_dt : 0.1e}, da/dW={da_dW:0.1e}\\n"
-                          +  rf"\\t e={e : 0.1e}, de/dt={ de_dt : 0.1e}, de/dW={de_dW : 0.1e}, m2={sp.m2 : 0.1e} ({sp.m2/c.solar_mass_to_pc : 0.1e} solar mass), dm2/dt={dm2_dt : 0.1e} \\n"
+                    print(rf"Step: t={t : 0.1e}, a={a : 0.1e}({a/sp.r_isco() : 0.1e} r_isco), da/dt={da_dt : 0.1e}, da/dW={dy_dW[0,0]:0.1e}\\n"
+                          +  rf"\\t e={e : 0.1e}, de/dt={ de_dt : 0.1e}, de/dW={dy_dW[1,0] + dy_dW[1,1] : 0.1e}\\n"
                            + rf"\\t elapsed real time: { toc-tic } s")
 
-                dy_dt = np.array([[da_dt/a_scale, de_dt, dm2_dt/m_scale]])
-                dy_dW = np.array([[da_dW/a_scale, de_dW, dm2_dW/m_scale]])
+                dy_dW[0,:]/= a_scale
+                dy_dt = np.array([[da_dt/a_scale, de_dt]])
                 return dy_dt * t_scale, dy_dW*np.sqrt(t_scale)   # TODO : Check scaling
 
             def termination_condition(self, t, y, verbose = False):
                 """
                 Gives the termination condition for falling into a black hole
                 """
-                a, e, m2 = y
+                a, e = y
                 #if verbose:
                 #    print(t, y, a, a*a_scale, a*a_scale/sp.r_isco(), sp.r_isco(), a*a_scale < sp.r_isco())
                 return a*a_scale < sp.r_isco() or a*a_scale*(1.-e) < sp.r_schwarzschild()
@@ -295,11 +238,11 @@ class Stochastic:
                         The diffusion of the integration
                 """
                 f = torch.Tensor(size=y.shape)
-                g = torch.Tensor(size=y.shape)
+                g = torch.Tensor(size=(*y.shape, state_size))
                 for i, ys in enumerate(y):
                     if self.termination_condition(t.item(), np.array(ys)):
                         f[i] = torch.zeros(size=ys.shape)
-                        g[i] = torch.zeros(size=ys.shape)
+                        g[i] = torch.zeros(size=(*y.shape, state_size))
                         continue
                     dy_dt, dy_dW = self.dy(t.item(), np.array(ys))
                     f[i] = torch.Tensor(dy_dt)
@@ -309,12 +252,10 @@ class Stochastic:
                     print("Step: ", t, y, f, g)
                 return f, g
 
-
         # Initial conditions
-        state_size = 3
         y0 = torch.full(size=(batch_size, state_size), fill_value=0.)
         for batch in range(y0.shape[0]):
-            y0[batch] = torch.tensor([a_0 / a_scale, e_0, sp.m2/m_scale])
+            y0[batch] = torch.tensor([a_0 / a_scale, e_0])
 
         # tspan
         ts = torch.linspace(0., t_fin/t_scale, t_size)
@@ -338,7 +279,7 @@ class Stochastic:
             a = a_scale * np.array(sol[:terminated, batch, 0])
             ev = Classic.EvolutionResults(sp, opt, t, a)
             ev.e = np.array(sol[:terminated, batch, 1]) if opt.elliptic else np.zeros(np.shape(ev.t))
-            ev.m2 = m_scale*np.array(sol[:terminated,batch,2]) if opt.m2_change else sp.m2
+            ev.m2 = sp.m2
             evs.append(ev)
 
         if opt.verbose > 0:

@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.integrate import quad, odeint
+from scipy.integrate import quad, quad_vec, odeint
 from scipy.interpolate import interp1d
 import collections
 
@@ -178,53 +178,25 @@ class StochasticForce(DissipativeForce):
     """
     name = "StochasticForce"
 
-    def dE_dW(self, sp, a, e, opt):
+
+    def dEdL_diffusion(self, sp, a, e, opt):
         """
-        Placeholder function that models the Brownian motion in energy.
+        Placeholder function that should return the Brownian motion in energy E and angular momentum L.
+        The variances of E, L are expected on the diagonal [0,0], [1,1], and the covariance
+         on the offdiagonal.
 
         Parameters:
             sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
+            a  (float)      : The semimajor axis of the Keplerian orbit
             e  (float)      : The eccentricity of the Keplerian orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
-            out : float
-                The strength of the Brownian motion in Energy
+            out : np.ndarray with shape=(2,2)
+                The diffusion matrix for the SDE
         """
         pass
 
-    def dL_dw(self, sp, a, e, opt):
-        """
-        Placeholder function that models the Brownian motion in angular momentum.
-
-        Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
-            opt (EvolutionOptions): The options for the evolution of the differential equations
-
-        Returns:
-            out : float
-                The strength of the Brownian motion in angular momentum
-        """
-        pass
-
-    def dE_dL_cov(self, sp, a, e, opt):
-        """
-        Placeholder function that models the covariance between the Brownian motion in Energy and angular momentum
-
-        Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
-            opt (EvolutionOptions): The options for the evolution of the differential equations
-
-        Returns:
-            out : float
-                The covariance
-        """
-        pass
 
 
 class GWLoss(DissipativeForce):
@@ -723,10 +695,10 @@ class StellarDiffusion(StochasticForce):
         dL_dt = (1.-e**2)**(3./2.) * quad(integrand, 0., np.pi, limit=50)[0]
         return -2.* self.m * dL_dt
 
-    def dE_dW(self, sp, a, e, opt):
+    def dEdL_diffusion(self, sp, a, e, opt):
         """
-        Calculates the variance of energy loss due to stellar diffusion.
-        Eq (15) from https://arxiv.org/pdf/2304.13062.pdf
+        Calculates the matrix for the diffusion term of the SDE due to stellar diffusion.
+        The variances are on the diagonal according to Eq(15) and (17), the covariance is on the off-diagonal Eq(18)
 
         Parameters:
             sp (SystemProp) : The object describing the properties of the inspiralling system
@@ -735,61 +707,17 @@ class StellarDiffusion(StochasticForce):
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
-            out : float
-                The variance of energy loss due to stellar diffusion
+            out : np.matrix
+                The diffusion matrix
         """
+        J = np.sqrt(sp.m1**2 / sp.m_total() * a * (1.-e**2))
         def integrand(phi):
             r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
             deps2 = v**2 *  self.E_v_par2(v)
-            return deps2 / (1.+e*np.cos(phi))**2
-        dE_dW = (1.-e**2)**(3./2.) * quad(integrand, 0., np.pi, limit=50)[0]
-        return -2.* self.m * dE_dW
-
-
-    def dL_dW(self, sp, a, e, opt):
-        """
-        Calculates the variance of angular momentum loss due to stellar diffusion.
-        Eq (17) from https://arxiv.org/pdf/2304.13062.pdf
-
-        Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
-            opt (EvolutionOptions): The options for the evolution of the differential equations
-
-        Returns:
-            out : float
-                The variance of angular momemtum loss due to stellar diffusion
-        """
-        J = np.sqrt(sp.m1**2 / sp.m_total() * a * (1.-e**2))
-        def integrand(phi):
-            r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
             dJ2 = J**2 / v**2 * self.E_v_par2(v) + 1./2. *( r**2 - J**2/v**2) * self.E_v_ort2(v)
-            return dJ2 / (1.+e*np.cos(phi))**2
-        dL_dW = (1.-e**2)**(3./2.) * quad(integrand, 0., np.pi, limit=50)[0]
-        return -2.* self.m * dL_dW
-
-    def dE_dL_cov(self, sp, a, e, opt):
-        """
-        Calculates the covariance of energy and angular momentum loss due to stellar diffusion.
-        Eq (18) from https://arxiv.org/pdf/2304.13062.pdf
-
-        Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
-            opt (EvolutionOptions): The options for the evolution of the differential equations
-
-        Returns:
-            out : float
-                The covariance of energy and angular momemtum loss due to stellar diffusion
-
-        """
-        J = np.sqrt(sp.m1**2 / sp.m_total() * a * (1.-e**2))
-        def integrand(phi):
-            r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
             dJdeps = J *self.E_v_par2(v)
-            return dJdeps / (1.+e*np.cos(phi))**2
-        dE_dL_cov = (1.-e**2)**(3./2.) * quad(integrand, 0., np.pi, limit=50)[0]
-        return -2.* self.m * dE_dL_cov
+            return np.array([[deps2, dJdeps], [dJdeps, dJ2]]) / (1.+e*np.cos(phi))**2
+        covmatrix = (1.-e**2)**(3./2.) * quad_vec(integrand, 0., np.pi, limit=50)[0]
+        return -2.* self.m * covmatrix
+
 
