@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.integrate import quad, quad_vec, odeint
-from scipy.interpolate import interp1d
+from scipy.interpolate import interp1d, LinearNDInterpolator
 import collections
 
 import imripy.constants as c
@@ -586,7 +586,7 @@ class StellarDiffusion(StochasticForce):
     """
     name = "Stellar Diffusion"
 
-    def __init__(self, stellarDistribution : imripy.halo.MatterHaloDF, sp=None, CoulombLogarithm=None, E_m_s = c.solar_mass_to_pc, E_m_s2 = c.solar_mass_to_pc, m=None):
+    def __init__(self, stellarDistribution : imripy.halo.MatterHaloDF, sp, CoulombLogarithm=None, E_m_s = c.solar_mass_to_pc, E_m_s2 = c.solar_mass_to_pc**2, m=None):
         """
         The constructor for the StellarDiffusion class
         The values are initialized according to https://arxiv.org/pdf/2304.13062.pdf if not provided
@@ -594,8 +594,8 @@ class StellarDiffusion(StochasticForce):
         Parameters:
             istellarDistribution : imripy.halo.MatterHaloDF
                 Object describing the stellar distribution
-            sp : (optional) imripy.merger_system.SystemProp
-                The system prop object describing the merger system - If provided, sp.m1 and sp.m2 are used to initialize some values
+            sp : imripy.merger_system.SystemProp
+                The system prop object describing the merger system
             E_m_s : (optional) float
                 The first mass moment of the stellar distribution
             E_m_s2 :(optional)  float
@@ -613,39 +613,55 @@ class StellarDiffusion(StochasticForce):
         self.m = m or sp.m2
         self.CoulombLogarithm = CoulombLogarithm or np.log(0.4 * sp.m1 / self.E_m_s)
 
-        self.calc_velocity_diffusion_coeff()
+        self.calc_velocity_diffusion_coeff(sp)
 
 
 
-    def calc_velocity_diffusion_coeff(self):
+    def calc_velocity_diffusion_coeff(self, sp):
         """
         Calculates the velocity diffusion coefficients and saves them in the class for later use as a lambda function.
         This should only be needed once (or when the distribution function stellarDistribution.f changes)
         Eq (24)-(28) from https://arxiv.org/pdf/2304.13062.pdf
         """
-        v_grid = np.geomspace(1e-10, 1., 100) # Make appropriate
 
-        E_1_int = quad( lambda v_int : v_int * self.stellarDistribution.f(v_int), 0, 1, limit=100)[0]
-        E_1 = interp1d(v_grid, E_1_int / v_grid, kind='cubic', bounds_error=True)
+        r_grid = np.geomspace(2.*sp.m1, 1e8*2*sp.m1, 60)
+        v_grid = np.geomspace( np.sqrt(2.* self.stellarDistribution.potential(r_grid[-1])/10.), np.sqrt(2.*self.stellarDistribution.potential(r_grid[0])), 61)
+        R_grid, V_grid = np.meshgrid(r_grid, v_grid)
 
-        F_2_int = odeint( lambda a, v_int : v_int**2 * self.stellarDistribution.f(v_int), 0, v_grid )[:,0]
-        F_2 = interp1d(v_grid, F_2_int / v_grid**2, kind='cubic', bounds_error=True)
+        # The distribution function depends on the specific energy Eps
+        f = lambda v, r: self.stellarDistribution.f( np.max([- v**2 /2. + self.stellarDistribution.potential(r), 0.]))
 
-        F_4_int = odeint( lambda a, v_int : v_int**4 * self.stellarDistribution.f(v_int), 0, v_grid )[:,0]
-        F_4 = interp1d(v_grid, F_4_int / v_grid**4, kind='cubic', bounds_error=True)
+        # Calculte E_1, F_2, and F_4 for interpolation
+        E_1_int = np.zeros(np.shape(V_grid))
+        for i, r in enumerate(r_grid):
+            E_1_int[:,i] = quad( lambda v_int : v_int * f(v_int, r), 0, np.inf, limit=100)[0] * np.ones(np.shape(v_grid))
+        E_1 = LinearNDInterpolator( list(zip(R_grid.flatten(), V_grid.flatten())),
+                                             (E_1_int / V_grid).flatten(), rescale=True)
 
+        F_2_int = np.zeros(np.shape(V_grid))
+        for i, r in enumerate(r_grid):
+            F_2_int[:,i] = odeint( lambda a, v_int : v_int**2 * f(v_int, r), 0, v_grid )[:,0]
+        F_2 = LinearNDInterpolator(list(zip(R_grid.flatten(), V_grid.flatten())),
+                                    (F_2_int / V_grid**2).flatten() , rescale = True)
+
+        F_4_int = np.zeros(np.shape(V_grid))
+        for i, r in enumerate(r_grid):
+            F_4_int[:,i] = odeint( lambda a, v_int : v_int**4 * f(v_int, r), 0, v_grid )[:,0]
+        F_4 = LinearNDInterpolator(list(zip(R_grid.flatten(), V_grid.flatten())),
+                                   (F_4_int / V_grid**4).flatten() , rescale = True)
+
+        print(R_grid, V_grid, E_1_int, F_2_int, F_4_int)
+
+        # Make lambda functions for the velocity diffusion coefficients
         E_v_par_pref =  -16.*np.pi**2 *(self.E_m_s2 + self.m * self.E_m_s ) * self.CoulombLogarithm
-        self.E_v_par = lambda v: E_v_par_pref * F_2(v)
+        self.E_v_par = lambda r, v: E_v_par_pref * F_2(r, v)
 
         E_v_par2_pref = 32./3.*np.pi**2 * self.E_m_s2 * self.CoulombLogarithm
-        self.E_v_par2 = lambda v: E_v_par2_pref * v * (F_4(v) + E_1(v))
+        self.E_v_par2 = lambda r, v: E_v_par2_pref * v * (F_4(r, v) + E_1(r, v))
 
         E_v_ort2_pref = E_v_par2_pref
-        self.E_v_ort2 = lambda v: E_v_ort2_pref * v * (3*F_2(v) - F_4(v) + 2*E_1(v))
+        self.E_v_ort2 = lambda r, v: E_v_ort2_pref * v * (3*F_2(r, v) - F_4(r, v) + 2*E_1(r, v))
 
-        #n = 50
-        #print(v_grid[n], E_1(v_grid[n]), F_2(v_grid[n]), F_4(v_grid[n]),
-        #                self.E_v_par(v_grid[n]), self.E_v_par2(v_grid[n]), self.E_v_ort2(v_grid[n]))
 
 
     def dE_dt(self, sp, a, e, opt):
@@ -665,7 +681,7 @@ class StellarDiffusion(StochasticForce):
         """
         def integrand(phi):
             r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
-            deps = v * self.E_v_par(v) + self.E_v_par2(v) / 2. + self.E_v_ort2(v) / 2.
+            deps = v * self.E_v_par(r, v) + self.E_v_par2(r, v) / 2. + self.E_v_ort2(r, v) / 2.
             #print(v, deps, self.E_v_par(v), self.E_v_par2(v), self.E_v_ort2(v) )
             return deps / (1.+e*np.cos(phi))**2
         #plt.plot(np.linspace(0, np.pi), np.array([integrand(phi) for phi in np.linspace(0, np.pi)]))
@@ -690,7 +706,7 @@ class StellarDiffusion(StochasticForce):
         J = np.sqrt(sp.m1**2 / sp.m_total() * a * (1.-e**2))
         def integrand(phi):
             r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
-            dJ = J / v * self.E_v_par(v) + r**2 / J / 4. * self.E_v_ort2(v)
+            dJ = J / v * self.E_v_par(r, v) + r**2 / J / 4. * self.E_v_ort2(r, v)
             return dJ / (1.+e*np.cos(phi))**2
         dL_dt = (1.-e**2)**(3./2.) * quad(integrand, 0., np.pi, limit=50)[0]
         return -2.* self.m * dL_dt
@@ -711,13 +727,27 @@ class StellarDiffusion(StochasticForce):
                 The diffusion matrix
         """
         J = np.sqrt(sp.m1**2 / sp.m_total() * a * (1.-e**2))
-        def integrand(phi):
+
+        covmatrix = np.zeros((2,2))
+        def integrand_deps2(phi):
             r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
-            deps2 = v**2 *  self.E_v_par2(v)
-            dJ2 = J**2 / v**2 * self.E_v_par2(v) + 1./2. *( r**2 - J**2/v**2) * self.E_v_ort2(v)
-            dJdeps = J *self.E_v_par2(v)
-            return np.array([[deps2, dJdeps], [dJdeps, dJ2]]) / (1.+e*np.cos(phi))**2
-        covmatrix = (1.-e**2)**(3./2.) * quad_vec(integrand, 0., np.pi, limit=50)[0]
-        return -2.* self.m * covmatrix
+            deps2 = v**2 *  self.E_v_par2(r, v)
+            return deps2 / (1.+e*np.cos(phi))**2
+        covmatrix[0,0] = quad(integrand_deps2, 0., np.pi, limit=60)[0]
+
+        def integrand_dJ2(phi):
+            r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
+            dJ2 = J**2 / v**2 * self.E_v_par2(r, v) + 1./2. *( r**2 - J**2/v**2) * self.E_v_ort2(r, v)
+            return dJ2 / (1.+e*np.cos(phi))**2
+        covmatrix[1,1] = quad(integrand_dJ2, 0., np.pi, limit=60)[0]
+
+        def integrand_dJdeps(phi):
+            r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
+            dJdeps = J *self.E_v_par2(r, v)
+            return dJdeps / (1.+e*np.cos(phi))**2
+        covmatrix[0,1] = quad(integrand_dJdeps, 0., np.pi, limit=60)[0]
+        covmatrix[1,0] = covmatrix[0,1]
+
+        return -2.* self.m * (1.-e**2)**(3./2.) * covmatrix
 
 
