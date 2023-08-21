@@ -143,11 +143,13 @@ class Stochastic:
         if opt.elliptic:
             t_coal = t_coal * 48./19. / g(e_0)**4 * quad(lambda e: g(e)**4 *(1-e**2)**(5./2.) /e/(1. + 121./304. * e**2), 0., e_0, limit=100)[0]   # The inspiral time according to Maggiore (2007)
 
+        if a_fin == 0.:
+            a_fin = sp.r_isco()     # Stop evolution at r_isco
+
         if t_fin is None:
             t_fin = t_coal *( 1. - a_fin**4 / a_0**4)    # This is the time it takes with just gravitational wave emission
 
-        if a_fin == 0.:
-            a_fin = sp.r_isco()     # Stop evolution at r_isco
+
 
         # set scales to get rescale integration variables ?
         state_size = 2  # we integrate a, e
@@ -159,6 +161,23 @@ class Stochastic:
             print("Evolving from ", a_0/sp.r_isco(), " to ", a_fin/sp.r_isco(),"r_isco ", ("with initial eccentricity " + str(e_0)) if opt.elliptic else " on circular orbits", " with ", opt)
 
         class SDE(torchsde.SDEStratonovich):
+
+            class HitBlackHoleEvent(torchsde.HitTargetEvent):
+                def __init__(self):
+                    super(SDE.HitBlackHoleEvent, self).__init__(terminal=True)
+
+                def target(self, t, y):
+                    a = y[:,0]
+                    e = y[:,1]
+                    return  a*a_scale*(1.-e) - 4*sp.r_schwarzschild()
+
+            class HitAfinEvent(torchsde.HitTargetEvent):
+                def __init__(self):
+                    super(SDE.HitAfinEvent, self).__init__(terminal=True)
+
+                def target(self, t, y):
+                    a = y[:,0]
+                    return  a*a_scale - a_fin
 
             def __init__(self):
                 super().__init__(noise_type = 'general')
@@ -197,30 +216,19 @@ class Stochastic:
 
                 if self.opt.verbose > 1:
                     toc = time.perf_counter()
-                    print(rf"Step: t={t : 0.1e}, a={a : 0.1e}({a/sp.r_isco() : 0.1e} r_isco), da/dt={da_dt : 0.1e}, da/dW={dy_dW[0,0]:0.1e}\\n"
-                          +  rf"\\t e={e : 0.1e}, de/dt={ de_dt : 0.1e}, de/dW={dy_dW[1,0] + dy_dW[1,1] : 0.1e}\\n"
-                           + rf"\\t elapsed real time: { toc-tic } s")
+                    print(rf"Step: t={t : 0.12e} ({t/t_scale:0.2e} t_scale), a={a : 0.2e}({a/sp.r_isco() : 0.2e} r_isco)({a/a_fin:0.2e} a_fin), da/dt={da_dt : 0.2e}, da/dW={dy_dW[0,0]:0.2e}\\n"
+                          +  rf"\\t e={e : 0.2e}, de/dt={ de_dt : 0.2e}, de/dW={dy_dW[1,0] + dy_dW[1,1] : 0.2e}\\n"
+                           + rf"\\t elapsed real time: { toc-tic :0.4f} s")
 
                 dy_dW[0,:]/= a_scale
                 dy_dt = np.array([[da_dt/a_scale, de_dt]])
                 return dy_dt * t_scale, dy_dW*np.sqrt(t_scale)   # TODO : Check scaling
 
-            def termination_condition(self, t, y, verbose = False):
-                """
-                Gives the termination condition for falling into a black hole
-                """
-                a, e = y
-                #if verbose:
-                #    print(t, y, a, a*a_scale, a*a_scale/sp.r_isco(), sp.r_isco(), a*a_scale < sp.r_isco())
-                return a*a_scale < sp.r_isco() or a*a_scale*(1.-e) < sp.r_schwarzschild()
 
             def f_and_g(self, t, y):
                 """
-                This is a wrapper function for torchsde and has three purposes:
+                This is a wrapper function for torchsde and has two purposes:
                     - Get out of the torch.Tensors and convert to np.array for the rest of the code to work
-                    - there is no event detection like for (scipy->)solve_ivp, instead we have to provide a grid in t to sdeint. Therefore, we have to
-                        detect the infall into the black hole and stop the integration artificially. In this case zeros are returned for both drift and diffusion,
-                        effectively freezing the integration. These have to be trimmed out later.
                     - for batch_size > 1 it takes the tensors apart and calls the calc_derivatives function individually
                         This loses a lot of the speed but improving this would necessitate a total rewrite
                 TODO:
@@ -240,16 +248,12 @@ class Stochastic:
                 f = torch.Tensor(size=y.shape)
                 g = torch.Tensor(size=(*y.shape, state_size))
                 for i, ys in enumerate(y):
-                    if self.termination_condition(t.item(), np.array(ys)):
-                        f[i] = torch.zeros(size=ys.shape)
-                        g[i] = torch.zeros(size=(*y.shape, state_size))
-                        continue
                     dy_dt, dy_dW = self.dy(t.item(), np.array(ys))
                     f[i] = torch.Tensor(dy_dt)
                     g[i] = torch.Tensor(dy_dW)
 
-                if self.opt.verbose > 1:
-                    print("Step: ", t, y, f, g)
+                #if self.opt.verbose > 1:
+                #    print("Step: ", t, y, f, g)
                 return f, g
 
         # Initial conditions
@@ -258,27 +262,27 @@ class Stochastic:
             y0[batch] = torch.tensor([a_0 / a_scale, e_0])
 
         # tspan
-        ts = torch.linspace(0., t_fin/t_scale, t_size)
+        tspan = [0., t_fin/t_scale]
+        dt_min = np.min([1e-6, opt.accuracy])
+
+        # Events:
+        events = [SDE.HitBlackHoleEvent(), SDE.HitAfinEvent()]
 
         # Evolve
         tic = time.perf_counter()
         sde = SDE()
         with torch.no_grad():
-            sol = torchsde.sdeint(sde, y0, ts, adaptive=True, rtol=opt.accuracy, atol=opt.accuracy)
+            ts, sol, events = torchsde.solve_sde(sde, y0, tspan, method='heun', events=events, rtol=opt.accuracy, atol=opt.accuracy, dt_min=dt_min, dt=dt_min)
         toc = time.perf_counter()
 
         # Collect results
         evs = []
         for batch in range(sol.shape[1]):
             # find if and when the integration artificially terminated
-            terminated = 0
-            while terminated < sol.shape[0] and not sde.termination_condition(ts[terminated].item(), np.array(sol[terminated, batch, :]), verbose=True) :
-                terminated += 1
-            terminated += 1 # Make sure to get the first point inside the black hole
-            t = np.array(ts)[:terminated]*t_scale
-            a = a_scale * np.array(sol[:terminated, batch, 0])
+            t = np.unique(np.array(ts)[:, batch])*t_scale
+            a = a_scale * np.array(sol[:len(t), batch, 0])
             ev = Classic.EvolutionResults(sp, opt, t, a)
-            ev.e = np.array(sol[:terminated, batch, 1]) if opt.elliptic else np.zeros(np.shape(ev.t))
+            ev.e = np.array(sol[:len(t), batch, 1]) if opt.elliptic else np.zeros(np.shape(ev.t))
             ev.m2 = sp.m2
             evs.append(ev)
 
