@@ -2,7 +2,7 @@ import numpy as np
 from scipy.interpolate import UnivariateSpline, interp1d
 from scipy.integrate import quad, solve_ivp
 from scipy.special import jv
-import collections
+from collections.abc import Sequence
 
 
 def h_2(sp, ev, dbg=False, acc=1e-13):
@@ -169,7 +169,7 @@ def h(sp, ev, t_grid, phi_0=0., acc=1e-13):
             The amplitude of the cross polarization waveform at the corresponding time steps of t_grid
     """
     a_int = interp1d(ev.t, ev.a, kind='cubic', bounds_error=False, fill_value=(0.,0.))
-    if  isinstance(ev.e, (collections.Sequence, np.ndarray)):
+    if  isinstance(ev.e, (Sequence, np.ndarray)):
         e_int = interp1d(ev.t, ev.e, kind='cubic', bounds_error=False, fill_value=(0.,0.))
     else:
         e_int = interp1d(ev.t, np.zeros(np.shape(ev.t)), bounds_error=False, fill_value=(0.,0.))

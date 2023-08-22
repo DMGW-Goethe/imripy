@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.integrate import quad
-import collections
+from collections.abc import Sequence
 
 import imripy.constants as c
 import imripy.halo
@@ -80,7 +80,7 @@ class DissipativeForce:
             out : float
                 The energy loss due to accretion
         """
-        if  isinstance(a, (collections.Sequence, np.ndarray)):
+        if  isinstance(a, (Sequence, np.ndarray)):
             return np.array([self.dE_dt(sp, a_i, e, opt) for a_i in a])
         if e == 0.:
             v = sp.omega_s(a)*a
@@ -154,7 +154,7 @@ class DissipativeForce:
             v_s = sp.omega_s(a)*a
             dm2_dt = self.dm2_dt(sp, a, v_s, opt)
         else:
-            if  isinstance(a, (collections.Sequence, np.ndarray)):
+            if  isinstance(a, (Sequence, np.ndarray)):
                 return np.array([self.dm2_dt_avg(sp, a_i, e, opt) for a_i in a])
             def integrand(phi):
                 r = a*(1. - e**2)/(1. + e*np.cos(phi))

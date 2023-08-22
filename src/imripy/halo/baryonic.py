@@ -216,7 +216,7 @@ class MichelAccretion(MatterHalo):
             v_phi : array_like
                 The angular velocity at the radius r
         """
-        if not  isinstance(r, (collections.Sequence, np.ndarray)):
+        if not  isinstance(r, (Sequence, np.ndarray)):
             r = np.array([r])
         u = self.solve_ode(r)[1]
         W = np.sqrt(1. - 2.*self.M/r + u**2)
@@ -237,7 +237,7 @@ class MichelAccretion(MatterHalo):
             out : float or array_like (depending on r)
                 The density at the radius r
         """
-        if not  isinstance(r, (collections.Sequence, np.ndarray)):
+        if not  isinstance(r, (Sequence, np.ndarray)):
             r = np.array([r])
         return self.solve_ode(r)[0]
 
@@ -306,7 +306,7 @@ class BaryonicDisk(MatterHalo):
                 The mass inside the disk of size r
         """
         integrand = lambda r, m: self.surface_density(r, **kwargs)*r
-        if isinstance(r, (collections.Sequence, np.ndarray)):
+        if isinstance(r, (Sequence, np.ndarray)):
             return 2.*np.pi*odeint(integrand, quad(integrand, 0., r[0], args=(0.))[0], r, tfirst=True, rtol=1e-10, atol=1e-10)[:,0]
         else:
             return 2.*np.pi*quad(integrand, 0., r, args=(0.))[0]
@@ -750,7 +750,7 @@ class DerdzinskiMayerDisk(BaryonicDisk):
             out : float or array_like (depending on r)
                 The density at the radius r
         """
-        if isinstance(r, (np.ndarray, collections.Sequence)):
+        if isinstance(r, (np.ndarray, Sequence)):
             density = np.zeros(np.shape(r))
             rho = None; Sigma = None; T_mid = None; c_s2 = None
             for i in range(len(r)):
@@ -772,7 +772,7 @@ class DerdzinskiMayerDisk(BaryonicDisk):
             out : float or array_like (depending on r)
                 The surface density at the radius r
         """
-        if isinstance(r, (np.ndarray, collections.Sequence)):
+        if isinstance(r, (np.ndarray, Sequence)):
             surface_density = np.zeros(np.shape(r))
             rho = None; Sigma = None; T_mid = None; c_s2 = None
             for i in range(len(r)):
@@ -795,7 +795,7 @@ class DerdzinskiMayerDisk(BaryonicDisk):
             out : float or array_like (depending on r)
                 The soundspeed at the radius r
         """
-        if isinstance(r, (np.ndarray, collections.Sequence)):
+        if isinstance(r, (np.ndarray, Sequence)):
             c_s = np.zeros(np.shape(r))
             rho = None; Sigma = None; T_mid = None; c_s2 = None
             for i in range(len(r)):
@@ -818,7 +818,7 @@ class DerdzinskiMayerDisk(BaryonicDisk):
             out : float or array_like (depending on r)
                 The mach number at the radius r
         """
-        if isinstance(r, (np.ndarray, collections.Sequence)):
+        if isinstance(r, (np.ndarray, Sequence)):
             mach_number = np.zeros(np.shape(r))
             rho = None; Sigma = None; T_mid = None; c_s2 = None
             for i in range(len(r)):
@@ -843,7 +843,7 @@ class DerdzinskiMayerDisk(BaryonicDisk):
             out : float or array_like (depending on r)
                 The disk scale height at the radius r
         """
-        if isinstance(r, (np.ndarray, collections.Sequence)):
+        if isinstance(r, (np.ndarray, Sequence)):
             h = np.zeros(np.shape(r))
             rho = None; Sigma = None; T_mid = None; c_s2 = None
             for i in range(len(r)):

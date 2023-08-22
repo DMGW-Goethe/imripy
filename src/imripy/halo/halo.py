@@ -3,7 +3,7 @@ from scipy.interpolate import interp1d, griddata
 from scipy.integrate import odeint, quad, simps, solve_ivp
 from scipy.special import gamma
 #import matplotlib.pyplot as plt
-import collections
+from collections.abc import Sequence
 import imripy.cosmo as cosmo
 
 
@@ -50,7 +50,7 @@ class MatterHalo:
                 The mass inside the spherical shell of size r
         """
         integrand = lambda r, m: self.density(r, **kwargs)*r**2
-        if isinstance(r, (collections.Sequence, np.ndarray)):
+        if isinstance(r, (Sequence, np.ndarray)):
             return 4.*np.pi*odeint(integrand, quad(integrand, 0., r[0], args=(0.))[0], r, tfirst=True, rtol=1e-10, atol=1e-10)[:,0]
         else:
             return 4.*np.pi*quad(integrand, 0., r, args=(0.))[0]
@@ -257,7 +257,7 @@ class MatterHaloDF(MatterHalo):
         pass
         '''
         # Alternative calculaltion without interpolation
-        if not isinstance(Eps, (collections.Sequence, np.ndarray)):
+        if not isinstance(Eps, (Sequence, np.ndarray)):
             return 16.*np.pi**2 * quad(lambda r: r**2 * np.sqrt(2.*self.potential(r) - 2.*Eps), 0., self.r_of_Eps(Eps))[0]
         return 16.*np.pi**2 *np.array([quad(lambda r: r**2 * np.sqrt(2.*self.potential(r) - 2.*Eps), 0., self.r_of_Eps(Eps))[0]  for Eps in Eps])
         '''
@@ -285,13 +285,13 @@ class MatterHaloDF(MatterHalo):
 
         if v_max is None:
             v_max = np.sqrt(2*self.potential(r))
-        if not isinstance(r, (collections.Sequence, np.ndarray)):
+        if not isinstance(r, (Sequence, np.ndarray)):
             v2_list = np.linspace(0., v_max**2, 3000)
             f_list = self.f(self.potential(r) - 0.5*v2_list)
             return 4.*np.pi*simps(v2_list * f_list, x=np.sqrt(v2_list))
             #return 4.*np.pi*quad(lambda v: v**2 * self.f(self.potential(r) - v**2 /2.), 0., v_max, limit=200)[0]
 
-        if not isinstance(v_max, (collections.Sequence, np.ndarray)):
+        if not isinstance(v_max, (Sequence, np.ndarray)):
             v_max = np.ones(len(r))*v_max
         v_max = np.clip(v_max, 0., np.sqrt(2*self.potential(r)))
         return np.array([self.density(r, v) for r,v in zip(r, v_max) ])
@@ -424,7 +424,7 @@ class DynamicSS(MatterHaloDF):
         return self._stateDensity(Eps)
         '''
         # Alternative calculaltion without interpolation
-        if not isinstance(Eps, (collections.Sequence, np.ndarray)):
+        if not isinstance(Eps, (Sequence, np.ndarray)):
             return 16.*np.pi**2 * quad(lambda r: r**2 * np.sqrt(2.*self.potential(r) - 2.*Eps), 0., self.r_of_Eps(Eps))[0]
         return 16.*np.pi**2 *np.array([quad(lambda r: r**2 * np.sqrt(2.*self.potential(r) - 2.*Eps), 0., self.r_of_Eps(Eps))[0]  for Eps in Eps])
         '''
