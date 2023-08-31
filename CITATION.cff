@@ -1,0 +1,33 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: imripy
+message: >-
+  If you use this software, please cite the relevant papers
+  from the metadata.
+type: software
+authors:
+  - given-names: Niklas
+    family-names: Becker
+    email: nbecker@itp.uni-frankfurt.de
+    affiliation: Goethe University Frankfurt
+    orcid: 'https://orcid.org/0000-0002-8077-430X'
+identifiers:
+  - type: url
+    value: 'https://ascl.net/2307.018'
+    description: >-
+      [ascl:2307.018] IMRIpy: Intermediate Mass Ratio
+      Inspirals simulator 
+  - type: doi
+    value: 10.1103/PhysRevD.105.063029
+    description: >-
+      Circularization versus eccentrification in
+      intermediate mass ratio inspirals inside dark matter
+      spikes
+  - type: doi
+    value: 10.1103/PhysRevD.107.083003
+    description: >-
+      Comparing accretion disks and dark matter spikes in
+      intermediate mass ratio inspirals
+repository-code: 'https://github.com/DMGW-Goethe/imripy'
