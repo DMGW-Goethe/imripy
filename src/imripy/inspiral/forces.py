@@ -242,7 +242,8 @@ class GWLoss(DissipativeForce):
 class DynamicalFriction(DissipativeForce):
     name = "DynamicalFriction"
 
-    def __init__(self, ln_Lambda=-1, relativisticCorrections = False, haloPhaseSpaceDescription = False, v_max=None, dmPhaseSpaceFraction = 1.):
+    def __init__(self, halo=None, ln_Lambda=-1, relativisticCorrections = False, haloPhaseSpaceDescription = False, includeHigherVelocities = True):
+        self.halo = halo
         self.ln_Lambda = ln_Lambda
         self.relativisticCorrections = relativisticCorrections
         self.haloPhaseSpaceDescription = haloPhaseSpaceDescription
@@ -271,7 +272,7 @@ class DynamicalFriction(DissipativeForce):
                 The magnitude of the dynamical friction force
         """
         ln_Lambda = self.ln_Lambda
-        halo = sp.halo
+        halo = self.halo or sp.halo
         v_gas = halo.velocity(r)
         v_rel = ( self.get_relative_velocity(v, v_gas) if opt.considerRelativeVelocities
                         else self.get_relative_velocity(v, 0.) )
@@ -300,7 +301,7 @@ class DynamicalFriction(DissipativeForce):
 class GasDynamicalFriction(DissipativeForce):
     name = "GasDynamicalFriction"
 
-    def __init__(self, ln_Lambda= -1., frictionModel='Ostriker'):
+    def __init__(self, disk = None, ln_Lambda= -1., frictionModel='Ostriker'):
         """
         Constructor for the GasDynamicalFriction class
 
@@ -313,6 +314,7 @@ class GasDynamicalFriction(DissipativeForce):
         if not frictionModel in ['Ostriker', 'Sanchez-Salcedo']:
             raise Exception(f"Gas dynamical friction model not recognized: {frictionModel}")
         self.frictionModel = frictionModel
+        self.disk = disk
 
     def F(self, sp, r, v, opt):
         """
@@ -330,7 +332,7 @@ class GasDynamicalFriction(DissipativeForce):
                 The magnitude of the dynamical friction force
         """
         ln_Lambda = self.ln_Lambda
-        disk = sp.baryonicHalo
+        disk = self.disk or sp.baryonicHalo
         v_gas = disk.velocity(r)
         v_rel = ( self.get_relative_velocity(v, v_gas) if opt.considerRelativeVelocities
                         else self.get_relative_velocity(v, 0.) )
@@ -359,7 +361,7 @@ class AccretionLoss(DissipativeForce):
     name = "AccretionLoss"
     m2_change = True
 
-    def __init__(self, accretionModel = 'Collisionless', withSoundspeed = False, includeRecoil=False):
+    def __init__(self, halo = None, accretionModel = 'Collisionless', withSoundspeed = False, includeRecoil=False):
         """
         Constructor for the AccretionLoss function
 
@@ -369,6 +371,7 @@ class AccretionLoss(DissipativeForce):
         withSoundspeed : Whether to include the soundspeed in the Bondi-Hoyle model
         includeRecoil  : Whether to include recoil effects from the collisions
         """
+        self.halo = halo
         if not accretionModel in ['Collisionless', 'Bondi-Hoyle']:
             raise Exception(f"Accretion model not recognized: {accretionModel}")
         self.accretionModel = accretionModel
@@ -391,9 +394,10 @@ class AccretionLoss(DissipativeForce):
             out : float
                 The black hole cross section
         """
+        halo = self.halo or sp.halo
         if self.accretionModel == 'Bondi-Hoyle':
 
-            dm_soundspeed2 = sp.halo.soundspeed(r)**2 if self.withSoundspeed else 0.
+            dm_soundspeed2 = halo.soundspeed(r)**2 if self.withSoundspeed else 0.
 
             return 4.*np.pi * sp.m2**2 / (v_rel**2 +  dm_soundspeed2)**(3./2.)  / v_rel
 
@@ -418,11 +422,12 @@ class AccretionLoss(DissipativeForce):
             out : float
                 The mass gain due to accretion
         """
-        v_gas = sp.halo.velocity(r)
+        halo = self.halo or sp.halo
+        v_gas = halo.velocity(r)
         v_rel = ( self.get_relative_velocity(v, v_gas) if opt.considerRelativeVelocities
                         else self.get_relative_velocity(v, 0.) )
         v = np.sqrt( v[0]**2 + v[1]**2 ) if isinstance(v, tuple) else v
-        return sp.halo.density(r) * v * self.BH_cross_section(sp, r, np.abs(v_rel), opt)
+        return halo.density(r) * v * self.BH_cross_section(sp, r, np.abs(v_rel), opt)
 
 
     def F(self, sp, r, v, opt):
@@ -459,7 +464,8 @@ class AccretionLoss(DissipativeForce):
             out : float
                 The magnitude of the accretion force
         """
-        v_gas = sp.halo.velocity(r)
+        halo = self.halo or sp.halo
+        v_gas = halo.velocity(r)
         v_rel = ( self.get_relative_velocity(v, v_gas) if opt.considerRelativeVelocities
                         else self.get_relative_velocity(v, 0.) )
         v = np.sqrt( v[0]**2 + v[1]**2 ) if isinstance(v, tuple) else v
@@ -481,7 +487,8 @@ class AccretionLoss(DissipativeForce):
             out : float
                 The magnitude of the accretion recoil force
         """
-        v_gas = sp.halo.velocity(r)
+        halo = self.halo or sp.halo
+        v_gas = halo.velocity(r)
         v_rel = ( self.get_relative_velocity(v, v_gas) if opt.considerRelativeVelocities
                         else self.get_relative_velocity(v, 0.) )
         v = np.sqrt( v[0]**2 + v[1]**2 ) if isinstance(v, tuple) else v
@@ -491,12 +498,13 @@ class AccretionLoss(DissipativeForce):
 class GasInteraction(DissipativeForce):
     name = "GasInteraction"
 
-    def __init__(self, gasInteraction = 'gasTorqueLossTypeI', alpha=0.1, fudgeFactor=1.):
+    def __init__(self, disk = None, gasInteraction = 'gasTorqueLossTypeI', alpha=0.1, fudgeFactor=1.):
         if not gasInteraction in ['gasTorqueLossTypeI', 'gasTorqueLossTypeII']:
             raise Exception(f"Gas Interaction type not recognized: {gasInteraction}")
         self.gasInteraction = gasInteraction
         self.alpha = None
         self.fudgeFactor = fudgeFactor
+        self.disk = disk
 
     def F(self, sp, r, v, opt):
         """
@@ -516,7 +524,7 @@ class GasInteraction(DissipativeForce):
             out : float
                 The magnitude of the force through gas interactions
         """
-        disk = sp.baryonicHalo
+        disk = self.disk or sp.baryonicHalo
         v_gas = disk.velocity(r)
         v_rel = ( self.get_relative_velocity(v, v_gas) if opt.considerRelativeVelocities
                         else self.get_relative_velocity(v, 0.) )
