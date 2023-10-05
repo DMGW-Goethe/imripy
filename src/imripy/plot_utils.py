@@ -6,7 +6,7 @@ from scipy.interpolate import interp1d
 
 from imripy import halo, inspiral, waveform, constants as c
 
-def plotEvolution(sp, ev, ax_a=None, ax_e=None, label="", ax_ae=None, ax_m=None, m2=1., ax_n=None, color=None, linestyle=None):
+def plotEvolution(sp, ev, ax_a=None, ax_e=None, label="", ax_ae=None, ax_1mea=None, ax_m=None, m2=1., ax_n=None, color=None, linestyle=None):
     """
     Plots the evolution of the system in the natural units that are used throughout the code.
     The evolution can be plotted as semimajor axis / time, eccentricity / time, eccentricity / semimajor axis, or relative mass/time,
@@ -19,11 +19,11 @@ def plotEvolution(sp, ev, ax_a=None, ax_e=None, label="", ax_ae=None, ax_m=None,
         ax_a (plt.axes)     (optional)  : The axes on which to plot semimajor axis / time
         ax_e (plt.axes)     (optional)  : The axes on which to plot eccentricity / time
         ax_ae (plt.axes)    (optional)  : The axes on which to plot eccentricity / semimajor axis
+        ax_1mea (plt.axes)  (optional)  : The axes on which to plot semimajor axis / (1-eccentricity)
         ax_m (plt.axes)     (optional)  : The axes on which to plot relative mass / time
         m2   (float)        (optional)  : The initial mass of the system
         ax_n (plt.axes)     (optional)  : The axes on which to plot the braking index / frequency
         label (string)      (optional)  : The label corresponding to the lines
-        **kwargs                        : Other parameters that can be passed to the plotting
 
     Returns:
         out : matplotlib.lines.Line2D
@@ -40,6 +40,9 @@ def plotEvolution(sp, ev, ax_a=None, ax_e=None, label="", ax_ae=None, ax_m=None,
         color = l.get_c()
     if not ax_ae is None:
         l, = ax_ae.plot(ev.a/sp.r_isco(), ev.e, color=color, label=label, linestyle=linestyle)
+        color = l.get_c()
+    if not ax_1mea is None:
+        l, = ax_1mea.loglog(1. - ev.e, ev.a/sp.r_isco(), color=color, label=label, linestyle=linestyle)
         color = l.get_c()
     if not ax_n is None:
         F, n = waveform.BrakingIndex(sp, ev)
@@ -115,4 +118,49 @@ def plotDeltaN(sp_0, ev_0, sp_1, ev_1, ax_dN, ax_di=None, n=2, acc=1e-13, plotFg
     return f_gw1, dN
 
 
+def streamline(ax, sp, opt, a_grid, j_grid, cmap='plasma'):
+    """
+    Plots the streamlines and their strength of the ode system in a and j space.
+    a is the semimajor axis and j the specific angular momentum.
+    The dissipative forces considered are to be given to opt
 
+    Parameters:
+        ax (plt.axes)                   : The axes on which to plot
+        sp (merger_system.SystemProp)   : The object describing the properties of the inspiralling system
+        opt (inspiral.Classic.EvolutionOptions) : The evolution options. The important part is opt.dissipativeForces
+        a_grid (np.array)               : The grid in semimajor axis a
+        j_grid (np.array)               : The grid in specific angular momemtum j
+        cmap (plt colormap) (optional)  : A plt colormap or the identifying name
+
+    Returns:
+        out : matplotlib.image.AxesImage
+            The axes image plotted
+    """
+    na = len(a_grid); ne = len(j_grid)
+
+    a, j = np.meshgrid(a_grid, j_grid)
+    e = np.sqrt(1. - j**2)
+    e_grid = np.sqrt(1. - j_grid**2)
+    da_grid = np.zeros(np.shape(a))
+    dj_grid = np.zeros(np.shape(j))
+
+    for i in range(na):
+        for k in range(ne):
+            if a_grid[i]* (1.-e[k,i]) < 8.*sp.m1:
+                continue
+            da_grid[k,i], dE_dt = inspiral.Classic.da_dt(sp, a_grid[i], e=e[k,i], opt=opt, return_dE_dt=True)
+            dj_grid[k,i] = -e[k,i]/j[k,i] * inspiral.Classic.de_dt(sp, a_grid[i], e=e[k,i], dE_dt=dE_dt, opt=opt)
+
+    dloga = da_grid/a
+    dlogj = dj_grid/j
+
+    speed = np.sqrt(dlogj**2 + dloga**2)
+
+    im = ax.imshow(speed.T, norm='log',
+                   extent = [np.log10(j_grid[0]), np.log10(j_grid[-1]), np.log10(a_grid[0]/sp.r_isco()), np.log10(a_grid[-1]/sp.r_isco())],
+                  origin = 'lower', interpolation='bilinear', aspect='auto', cmap=cmap)
+    strm = ax.streamplot(np.log10(j_grid), np.log10(a_grid/sp.r_isco()),
+                  dlogj.T, dloga.T, color='black')
+    ax.plot(np.log10(j_grid), np.log10(8./6./(1.-e_grid)), color='black')
+    ax.fill_between(np.log10(j_grid), np.log10(8./6./(1.-e_grid)), color='gray', alpha=1.)
+    return im
