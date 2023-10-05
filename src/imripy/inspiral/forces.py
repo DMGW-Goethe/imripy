@@ -1,6 +1,6 @@
 import numpy as np
-from scipy.integrate import quad, quad_vec, odeint
-from scipy.interpolate import interp1d, LinearNDInterpolator
+from scipy.integrate import quad, quad_vec, odeint, simps
+from scipy.interpolate import interp1d, LinearNDInterpolator, CloughTocher2DInterpolator
 import collections
 
 import imripy.constants as c
@@ -247,8 +247,7 @@ class DynamicalFriction(DissipativeForce):
         self.ln_Lambda = ln_Lambda
         self.relativisticCorrections = relativisticCorrections
         self.haloPhaseSpaceDescription = haloPhaseSpaceDescription
-        self.dmPhaseSpaceFraction = dmPhaseSpaceFraction
-        self.v_max = v_max
+        self.includeHigherVelocities = haloPhaseSpaceDescription and includeHigherVelocities
 
     def F(self, sp, r, v, opt):
         """
@@ -285,17 +284,32 @@ class DynamicalFriction(DissipativeForce):
         if self.relativisticCorrections:
             relCovFactor = (1. + v_rel**2)**2 / (1. - v_rel**2)
 
+        density = halo.density(r)
+        bracket = ln_Lambda
         if self.haloPhaseSpaceDescription:
-            if 'v_max' in opt.additionalParameters:
-                v_max = opt.additionalParameters['v_max']
-            else:
-                v_max = self.v_max
-            density = halo.density(r, v_max=(v_max if not v_max is None else np.abs(v_rel)))
-        else:
-            density = halo.density(r) * self.dmPhaseSpaceFraction
+            v_rel = np.abs(v_rel)# Might be called v_rel, but for DM halos velocity = 0, and v_rel = |v|
+            alpha, beta, delta  = 0., 0., 0.
 
-        F_df = 4.*np.pi * relCovFactor * sp.m2**2 * density * ln_Lambda / v_rel**2  * np.sign(v_rel)
-        return np.nan_to_num(F_df)
+            v2_list = np.linspace(0., v_rel**2, 3000)
+            f_list = halo.f(np.clip(halo.potential(r) - 0.5*v2_list, 0.,None))
+            alpha =  4.*np.pi*simps(v2_list * f_list, x=np.sqrt(v2_list)) / density # TODO: Change Normalization of f from density to 1
+
+            while self.includeHigherVelocities:
+                v_esc = np.sqrt(2*halo.potential(r))
+                if np.abs(v_esc - v_rel)/v_esc < 2e-6 or v_rel > v_esc:
+                    break
+                v_list = np.linspace(v_rel+1e-7*v_rel, v_esc, 3000)
+                f_list = halo.f(np.clip(halo.potential(r) - 0.5*v_list**2, 0., None))
+
+                beta =  4.*np.pi*simps(v_list**2 * f_list * np.log((v_list + v_rel)/(v_list-v_rel)), x=v_list) / density
+                beta = np.nan_to_num(beta) # in case v_list ~ v_rel
+                delta =  -8.*np.pi*v_rel*simps(v_list * f_list, x=v_list) / density
+                break
+            bracket = (alpha * ln_Lambda + beta + delta)
+            #print(rf"r={r:.3e}({r/sp.r_isco():.3e} r_isco), v={v_rel:.3e}, alpha={alpha:.3e}, beta={beta:.3e}, delta={delta:.3e}, bracket={bracket:.3e}")
+
+        F_df = 4.*np.pi * relCovFactor * sp.m2**2 * density * bracket / v_rel**2  * np.sign(v_rel)
+        return F_df
 
 
 class GasDynamicalFriction(DissipativeForce):
