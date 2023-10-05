@@ -166,7 +166,7 @@ class Spike(MatterHaloDF):
 
     def potential(self, r):
         """
-        The underlying potential that is assumed for the distribution
+        The underlying (positively defined) potential that is assumed for the distribution
 
         Parameters:
             r : float or array_like
@@ -190,8 +190,8 @@ class Spike(MatterHaloDF):
             out : float or array_like
                 The value(s) of the distribution function at the given energies
         """
-        return (self.rho_spike * self.alpha*(self.alpha-1.)/(2.*np.pi)**(3./2.)
-                * (self.r_spike/self.M_bh)**self.alpha * gamma(self.alpha-1.)/gamma(self.alpha-1./2.)
+        return (self.rho_spike /(2.*np.pi)**(3./2.)
+                * (self.r_spike/self.M_bh)**self.alpha * gamma(self.alpha+1.)/gamma(self.alpha-1./2.)
                 * eps**(self.alpha-3./2.) )
 
     def FromSpikedNFW(snfw):
