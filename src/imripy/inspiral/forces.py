@@ -22,23 +22,66 @@ class DissipativeForce:
 
     @staticmethod
     def get_relative_velocity(v_m2, v_gas):
+        """
+        Calculates the relative velocities of the secondary and another object/medium (here labeled gas due to the origin)
+
+        Parameters
+        ---------
+            v_m2 : float or tuple
+                If float, is assumed to be in phi direction
+                If tuple the expected form is (v_r, v_phi)
+            v_gas : float or tuple
+                If float, is assumed to be in phi direction
+                If tuple the expected form is (v_r, v_phi)
+
+        Returns
+        ------
+            v_rel (float)       : The total relative velocity (is always positive)
+            v_rel_r (float)     : The relative velocity in r direction
+            v_rel_phi (float)   : The relative velocity in phi direction
+        """
         if isinstance(v_m2, tuple):
             if isinstance(v_gas, tuple):
-                v_rel = np.sqrt( (v_m2[0] - v_gas[0])**2 + (v_m2[1] - v_gas[1])**2 )
-                v_rel *= np.sign(v_m2[1] - v_gas[1]) if np.sign(v_m2[1]) == np.sign(v_gas[1]) else 1.
+                v_rel_r = (v_m2[0] - v_gas[0])
+                v_rel_phi = (v_m2[1] - v_gas[1])
             else:
-                v_rel =  np.sqrt( v_m2[0]**2 + (v_m2[1] - v_gas)**2 )
-                v_rel *= np.sign(v_m2[1] - v_gas) if np.sign(v_m2[1]) == np.sign(v_gas) else 1.
+                v_rel_r = v_m2[0]
+                v_rel_phi = (v_m2[1] - v_gas)
         else:
             if isinstance(v_gas, tuple):
-                v_rel =  np.sqrt( (v_gas[0])**2 + (v_m2 - v_gas[1])**2 )
-                v_rel *= np.sign(v_m2 - v_gas[1]) if np.sign(v_m2) == np.sign(v_gas[1]) else 1.
+                v_rel_r = -v_gas[0]
+                v_rel_phi = (v_m2 - v_gas[1])
             else:
-                v_rel = v_m2 - v_gas
-        return v_rel
+                v_rel_r = 0.
+                v_rel_phi = (v_m2 - v_gas)
+        v_rel = np.sqrt(v_rel_r**2 + v_rel_phi**2)
+        return v_rel, v_rel_r, v_rel_phi
 
     @staticmethod
     def get_orbital_elements(sp, a, e, phi, opt):
+        """
+        Calculates the orbital position and velocities for the secondary given the Keplerian paramters
+
+        Parameters
+        ---------
+            sp : merger_system.SystemProp
+                Describing the binary system
+            a  : float
+                The semimajor axis
+            e  : float
+                The eccentricity
+            phi : float
+                The true anomaly of the object
+            opt : inspiral.Classic.EvolutionOptions
+                The inspiral options - relevant here is opt.progradeRotation
+
+        Returns
+        ------
+            r (float)       : The radius of the secondary
+            v (float)       : The total velocity
+            v_r (float)     : The velocity in r direction
+            v_phi (float)   : The velocity in phi direction
+        """
         r = a*(1. - e**2)/(1. + e*np.cos(phi))
         v = np.sqrt(sp.m_total(a) *(2./r - 1./a))
         v_phi = r * np.sqrt(sp.m_total(a)*a*(1.-e**2))/r**2
@@ -59,8 +102,10 @@ class DissipativeForce:
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
-            out : float
+            out : float or tuple
                 The strength of the dissipative force
+                If the return type is float, the force is assumed to be antiparallel to the velocity v of the secondary
+                If the return type is tuple, it is taken to be (F_r, F_phi) and the appropriate vector quantities for E,L are taken
         """
         pass
 
@@ -86,11 +131,15 @@ class DissipativeForce:
         if e == 0.:
             v = sp.omega_s(a)*a
             r, v, v_r, v_phi = self.get_orbital_elements(sp, a, 0., 0., opt)
-            return - self.F(sp, a, (v_r, v_phi), opt)*v
+            F = self.F(sp, r, (v_r, v_phi), opt)
+            F_proj = F[1]*v_phi if isinstance(F, tuple) else F*v
+            return - F_proj
         else:
             def integrand(phi):
                 r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
-                return self.F(sp, r, (v_r, v_phi), opt)*v / (1.+e*np.cos(phi))**2
+                F = self.F(sp, r, (v_r, v_phi), opt)
+                F_proj = (v_r*F[0] + v_phi*F[1]) if isinstance(F, tuple) else F*v
+                return F_proj / (1.+e*np.cos(phi))**2
             return -(1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
 
@@ -112,9 +161,10 @@ class DissipativeForce:
         """
         def integrand(phi):
             r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
-            return self.F(sp, r, (v_r, v_phi), opt)/v / (1.+e*np.cos(phi))**2
-        return -(1.-e**2)**(3./2.)/2./np.pi *np.sqrt(sp.m_total(a) * a*(1.-e**2)) *  quad(integrand, 0., 2.*np.pi, limit = 100)[0]
-
+            F = self.F(sp, r, (v_r, v_phi), opt)
+            F_proj = F[1] * r if isinstance(F, tuple) else F/v *np.sqrt(sp.m_total(a) * a*(1.-e**2))
+            return F_proj / (1.+e*np.cos(phi))**2
+        return -(1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
     def dm2_dt(self, sp, r, v, opt):
         """
@@ -268,13 +318,13 @@ class DynamicalFriction(DissipativeForce):
 
         Returns:
             out : float
-                The magnitude of the dynamical friction force
+                The magnitude of the dynamical friction force - antiparralel to the velocity
         """
         ln_Lambda = self.ln_Lambda
         halo = self.halo or sp.halo
         v_gas = halo.velocity(r)
-        v_rel = ( self.get_relative_velocity(v, v_gas) if opt.considerRelativeVelocities
-                        else self.get_relative_velocity(v, 0.) )
+        v_rel = ( self.get_relative_velocity(v, v_gas)[0] if opt.considerRelativeVelocities
+                        else self.get_relative_velocity(v, 0.)[0] )
         # print(v, v_gas, v_rel)
 
         if ln_Lambda < 0.:
@@ -287,7 +337,6 @@ class DynamicalFriction(DissipativeForce):
         density = halo.density(r)
         bracket = ln_Lambda
         if self.haloPhaseSpaceDescription:
-            v_rel = np.abs(v_rel)# Might be called v_rel, but for DM halos velocity = 0, and v_rel = |v|
             alpha, beta, delta  = 0., 0., 0.
 
             v2_list = np.linspace(0., v_rel**2, 3000)
@@ -308,7 +357,8 @@ class DynamicalFriction(DissipativeForce):
             bracket = (alpha * ln_Lambda + beta + delta)
             #print(rf"r={r:.3e}({r/sp.r_isco():.3e} r_isco), v={v_rel:.3e}, alpha={alpha:.3e}, beta={beta:.3e}, delta={delta:.3e}, bracket={bracket:.3e}")
 
-        F_df = 4.*np.pi * relCovFactor * sp.m2**2 * density * bracket / v_rel**2  * np.sign(v_rel)
+        F_df = 4.*np.pi * relCovFactor * sp.m2**2 * density * bracket / v_rel**2
+        F_df = np.nan_to_num(F_df)
         return F_df
 
 
@@ -348,7 +398,7 @@ class GasDynamicalFriction(DissipativeForce):
         ln_Lambda = self.ln_Lambda
         disk = self.disk or sp.baryonicHalo
         v_gas = disk.velocity(r)
-        v_rel = ( self.get_relative_velocity(v, v_gas) if opt.considerRelativeVelocities
+        v_rel, v_rel_r, v_rel_phi = ( self.get_relative_velocity(v, v_gas) if opt.considerRelativeVelocities
                         else self.get_relative_velocity(v, 0.) )
         # print(v, v_gas, v_rel)
 
@@ -357,18 +407,20 @@ class GasDynamicalFriction(DissipativeForce):
 
         if self.frictionModel == 'Ostriker':
             c_s = disk.soundspeed(r)
-            I = np.where( np.abs(v_rel) >= c_s,
-                                1./2. * np.log(1. - (c_s/np.abs(v_rel))**2) + ln_Lambda, # supersonic regime
-                                1./2. * np.log((1. + np.abs(v_rel)/c_s)/(1. - np.abs(v_rel)/c_s)) - np.abs(v_rel)/c_s) # subsonic regime
+            I = np.where( v_rel >= c_s,
+                                1./2. * np.log(1. - (c_s/v_rel)**2) + ln_Lambda, # supersonic regime
+                                1./2. * np.log((1. + v_rel/c_s)/(1. - v_rel/c_s)) - v_rel/c_s) # subsonic regime
             ln_Lambda = I
         elif self.frictionModel == 'Sanchez-Salcedo':
                 H = disk.scale_height(r)
                 R_acc = 2.*sp.m2 /v_rel**2
                 ln_Lambda =  7.15*H/R_acc
 
-        F_df = 4.*np.pi * sp.m2**2 * disk.density(r) * ln_Lambda / v_rel**2  * np.sign(v_rel)
+        F_df = 4.*np.pi * sp.m2**2 * disk.density(r) * ln_Lambda / v_rel**2
         #print(v, v_gas, v_rel, F_df)
-        return np.nan_to_num(F_df)
+        F_df = np.nan_to_num(F_df)
+        return F_df*v_rel_r/v_rel, F_df*v_rel_phi/v_rel
+
 
 
 class AccretionLoss(DissipativeForce):
@@ -438,10 +490,10 @@ class AccretionLoss(DissipativeForce):
         """
         halo = self.halo or sp.halo
         v_gas = halo.velocity(r)
-        v_rel = ( self.get_relative_velocity(v, v_gas) if opt.considerRelativeVelocities
-                        else self.get_relative_velocity(v, 0.) )
+        v_rel = ( self.get_relative_velocity(v, v_gas)[0] if opt.considerRelativeVelocities
+                        else self.get_relative_velocity(v, 0.)[0] )
         v = np.sqrt( v[0]**2 + v[1]**2 ) if isinstance(v, tuple) else v
-        return halo.density(r) * v * self.BH_cross_section(sp, r, np.abs(v_rel), opt)
+        return halo.density(r) * v * self.BH_cross_section(sp, r, v_rel, opt)
 
 
     def F(self, sp, r, v, opt):
@@ -480,10 +532,10 @@ class AccretionLoss(DissipativeForce):
         """
         halo = self.halo or sp.halo
         v_gas = halo.velocity(r)
-        v_rel = ( self.get_relative_velocity(v, v_gas) if opt.considerRelativeVelocities
-                        else self.get_relative_velocity(v, 0.) )
+        v_rel = ( self.get_relative_velocity(v, v_gas)[0] if opt.considerRelativeVelocities
+                        else self.get_relative_velocity(v, 0.)[0] )
         v = np.sqrt( v[0]**2 + v[1]**2 ) if isinstance(v, tuple) else v
-        return self.dm2_dt(sp, r, np.abs(v_rel), opt) *  v
+        return self.dm2_dt(sp, r, v_rel, opt) *  v
 
 
     def F_recoil(self, sp, r, v, opt):
@@ -503,10 +555,10 @@ class AccretionLoss(DissipativeForce):
         """
         halo = self.halo or sp.halo
         v_gas = halo.velocity(r)
-        v_rel = ( self.get_relative_velocity(v, v_gas) if opt.considerRelativeVelocities
-                        else self.get_relative_velocity(v, 0.) )
+        v_rel = ( self.get_relative_velocity(v, v_gas)[0] if opt.considerRelativeVelocities
+                        else self.get_relative_velocity(v, 0.)[0] )
         v = np.sqrt( v[0]**2 + v[1]**2 ) if isinstance(v, tuple) else v
-        return self.dm2_dt(sp, r, np.abs(v_rel), opt) * v
+        return self.dm2_dt(sp, r, v_rel, opt) * v
 
 
 class GasInteraction(DissipativeForce):
@@ -539,9 +591,9 @@ class GasInteraction(DissipativeForce):
                 The magnitude of the force through gas interactions
         """
         disk = self.disk or sp.baryonicHalo
-        v_gas = disk.velocity(r)
-        v_rel = ( self.get_relative_velocity(v, v_gas) if opt.considerRelativeVelocities
-                        else self.get_relative_velocity(v, 0.) )
+        #v_gas = disk.velocity(r)
+        #v_rel = ( self.get_relative_velocity(v, v_gas)[0] if opt.considerRelativeVelocities
+        #                else self.get_relative_velocity(v, 0.)[0] )
 
         if self.gasInteraction == 'gasTorqueLossTypeI':
             mach_number = disk.mach_number(r)

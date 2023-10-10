@@ -114,7 +114,8 @@ class Classic:
             out : float
                 The angular momentum of the Keplerian orbit
         """
-        return np.sqrt(a * (1-e**2) * sp.m_total(a) * sp.m_reduced(a)**2 )
+        L = np.sqrt(a * (1-e**2) * sp.m_total(a) * sp.m_reduced(a)**2 )
+        return L if opt.progradeRotation else -L
         #return np.sqrt( -(1. - e**2) * sp.m_reduced(a)**3 * sp.m_total(a)**2 / 2. / Classic.E_orbit(sp, a, e))
 
 
