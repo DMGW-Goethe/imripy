@@ -30,6 +30,12 @@ class Classic:
                 These parameters are for backwards compatibility - Only applies if dissipativeForces=None - then forces.GWLoss is added to the list
             dynamicalFrictionLoss : bool
                 These parameters are for backwards compatibility - Only applies if dissipativeForces=None - then forces.GWLoss is added to the list
+            considerRelativeVelocities: bool
+                Wether to consider the relative velocities between the secondary and the environmental distributions. So far only relevant for accretion disk models
+            progradeRotation : bool
+                Wether to orbit prograde or retrograde wrt to some other orbiting object - so far only relevant for accretion disk models
+            periapsePrecession : bool
+                Wether to include precession of the periapse due to relativistic precession and mass precession
             **kwargs : additional parameter
                 Will be saved in opt.additionalParameters and will be available throughout the integration
 
@@ -37,6 +43,7 @@ class Classic:
         def __init__(self, accuracy=1e-10, verbose=1, elliptic=True, m2_change=False,
                                     dissipativeForces=None, gwEmissionLoss = True, dynamicalFrictionLoss = True,
                                     considerRelativeVelocities=False, progradeRotation = True,
+                                    periapsePrecession = False,
                                     **kwargs):
             self.accuracy = accuracy
             self.verbose = verbose
@@ -51,6 +58,7 @@ class Classic:
             self.dissipativeForces = dissipativeForces
             self.considerRelativeVelocities = considerRelativeVelocities
             self.progradeRotation = progradeRotation
+            self.periapsePrecession = periapsePrecession
             self.additionalParameters = kwargs
 
 
@@ -269,6 +277,35 @@ class Classic:
         return - (1.-e**2)/2./e *(  dE_dt/E + 2. * dL_dt/L   )
 
 
+    def dperiapse_angle_dt(sp, a, e, opt=EvolutionOptions()):
+        """
+        The function gives the secular time derivative of the argument of periapse due to relativistic (Schwarzschild) precession
+            and the mass precession of the halo mass
+        The relativistic precession is given by the first term of equation (11) and the mass precession part is given by a generalization of
+            equation (10) of https://arxiv.org/pdf/2111.13514.pdf
+
+        Parameters:
+            sp (SystemProp) : The object describing the properties of the inspiralling system
+            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
+            e  (float)      : The eccentricity of the Keplerian orbit
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+
+        Returns:
+            out : float
+                The secular time derivative of the pericenter angle
+        """
+        T = 2.*np.pi * np.sqrt(a**3/sp.m_total())
+        # relativistic precession
+        dperiapse_angle_dt_rp = 6.*np.pi * sp.m_total() / a / (1-e**2) / T
+
+        # mass precession
+        def integrand(phi):
+            r = a*(1. - e**2)/(1. + e*np.cos(phi))
+            return np.cos(phi) * sp.halo.mass(r) / sp.m_total()
+        dperiapse_angle_dt_m =  1./e / T  * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
+
+        return dperiapse_angle_dt_rp + dperiapse_angle_dt_m
+
     class EvolutionResults:
         """
         This class keeps track of the evolution of an inspiral.
@@ -350,7 +387,7 @@ class Classic:
             t = t*t_scale
 
             # Unpack array
-            a, e, m2 = y
+            a, e, m2, periapse_angle = y
             a *= a_scale; sp.m2 = m2 * m_scale if opt.m2_change else sp.m2
 
             if opt.verbose > 1:
@@ -359,13 +396,14 @@ class Classic:
             da_dt, dE_dt = Classic.da_dt(sp, a, e, opt=opt, return_dE_dt=True)
             de_dt = Classic.de_dt(sp, a, e, dE_dt=dE_dt, opt=opt) if opt.elliptic else 0.
             dm2_dt = Classic.dm2_dt(sp, a, e, opt) if opt.m2_change else 0.
+            dperiapse_angle_dt = Classic.dperiapse_angle_dt(sp, a, e, opt) if opt.periapsePrecession else 0.
 
             if opt.verbose > 1:
                 toc = time.perf_counter()
                 print("t=", t, "a=", a, "da/dt=", da_dt, "e=", e, "de/dt=", de_dt, "m2=", sp.m2, "dm2_dt=", dm2_dt,
                         " elapsed real time: ", toc-tic)
 
-            dy = np.array([da_dt/a_scale, de_dt, dm2_dt/m_scale])
+            dy = np.array([da_dt/a_scale, de_dt, dm2_dt/m_scale, dperiapse_angle_dt])
             return dy * t_scale
 
         # Termination condition
@@ -376,7 +414,7 @@ class Classic:
         inside_BH.terminal = True
 
         # Initial conditions
-        y_0 = np.array([a_0 / a_scale, e_0, sp.m2/m_scale])
+        y_0 = np.array([a_0 / a_scale, e_0, sp.m2/m_scale, sp.pericenter_angle])
 
         # Evolve
         tic = time.perf_counter()
@@ -390,6 +428,7 @@ class Classic:
         ev = Classic.EvolutionResults(sp, opt, t, a, msg=Int.message)
         ev.e = Int.y[1] if opt.elliptic else np.zeros(np.shape(ev.t))
         ev.m2 = Int.y[2]*m_scale if opt.m2_change else sp.m2;
+        ev.periapse_angle = Int.y[3] if opt.periapsePrecession else sp.pericenter_angle
 
         if opt.verbose > 0:
             print(Int.message)

@@ -6,7 +6,7 @@ from scipy.interpolate import interp1d
 
 from imripy import halo, inspiral, waveform, constants as c
 
-def plotEvolution(sp, ev, ax_a=None, ax_e=None, label="", ax_ae=None, ax_1mea=None, ax_m=None, m2=1., ax_n=None, color=None, linestyle=None):
+def plotEvolution(sp, ev, ax_a=None, ax_e=None, label="", ax_ae=None, ax_1mea=None, ax_m=None, m2=1., ax_pa=None, ax_n=None, color=None, linestyle=None):
     """
     Plots the evolution of the system in the natural units that are used throughout the code.
     The evolution can be plotted as semimajor axis / time, eccentricity / time, eccentricity / semimajor axis, or relative mass/time,
@@ -22,6 +22,7 @@ def plotEvolution(sp, ev, ax_a=None, ax_e=None, label="", ax_ae=None, ax_1mea=No
         ax_1mea (plt.axes)  (optional)  : The axes on which to plot semimajor axis / (1-eccentricity)
         ax_m (plt.axes)     (optional)  : The axes on which to plot relative mass / time
         m2   (float)        (optional)  : The initial mass of the system
+        ax_pa (plt.axes)    (optional)  : The axis on which to plot periapse angle / time
         ax_n (plt.axes)     (optional)  : The axes on which to plot the braking index / frequency
         label (string)      (optional)  : The label corresponding to the lines
 
@@ -40,6 +41,9 @@ def plotEvolution(sp, ev, ax_a=None, ax_e=None, label="", ax_ae=None, ax_1mea=No
         color = l.get_c()
     if not ax_ae is None:
         l, = ax_ae.plot(ev.a/sp.r_isco(), ev.e, color=color, label=label, linestyle=linestyle)
+        color = l.get_c()
+    if not ax_pa is None:
+        l, = ax_pa.plot(ev.t/c.year_to_pc, ev.periapse_angle*3437.8, color=color, label=label, linestyle=linestyle) # 1 rad = 3437.8 arcmin
         color = l.get_c()
     if not ax_1mea is None:
         l, = ax_1mea.loglog(1. - ev.e, ev.a/sp.r_isco(), color=color, label=label, linestyle=linestyle)
