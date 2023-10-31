@@ -311,6 +311,14 @@ class BaryonicDisk(MatterHalo):
         else:
             return 2.*np.pi*quad(integrand, 0., r, args=(0.))[0]
 
+    def Q(self, r):
+        """
+        Toomre's stability parameter Q for the disk
+        """
+        Omega = np.sqrt(self.M/r**3)
+        #return self.soundspeed(r) * Omega / np.pi / self.surface_density(r)
+        return  Omega**2 / 2. / np.pi / self.density(r)
+
     def __str__(self):
         """
         Gives the string representation of the object
@@ -336,9 +344,10 @@ class AlphaDisk(BaryonicDisk):
         f_edd (flaot) : The Eddington accretion rate fraction
         eps   (float) : mass-energy conversion efficiency
             (technically we don't need both of these parameters, this is just for convenience)
+        r_max (float) : the maximal radius of the disk
     """
 
-    def __init__(self, M, alpha, f_edd, eps):
+    def __init__(self, M, alpha, f_edd, eps, r_max = np.inf):
         """
         The constructor for the AlphaDisk class.
 
@@ -351,12 +360,15 @@ class AlphaDisk(BaryonicDisk):
                 The Eddintion accretion rate fraction
             eps   : float
                 The mass-energy conversion efficiency
+            r_max : float
+                The maximal radius of the disk
         """
         super().__init__()
         self.M = M
         self.alpha = alpha
         self.f_edd = f_edd
         self.eps = eps
+        self.r_max = r_max
 
     def surface_density(self, r):
         """
@@ -372,7 +384,9 @@ class AlphaDisk(BaryonicDisk):
                 The surface density at the radius r
         """
         # convert kg/m^2 to invpc
-        return 5.4e3 * 0.1*c.g_cm2_to_invpc / (self.alpha/0.1) / (self.f_edd / 0.1 * 0.1 / self.eps) * (r/self.M)**(3./2.)
+        return np.where( r < self.r_max,
+                            5.4e3 * 0.1*c.g_cm2_to_invpc / (self.alpha/0.1) / (self.f_edd / 0.1 * 0.1 / self.eps) * (r/self.M)**(3./2.),
+                             0.)
 
     def scale_height(self, r):
         """
@@ -387,7 +401,9 @@ class AlphaDisk(BaryonicDisk):
             out : float or array_like (depending on r)
                 The disk scale height at the radius r
         """
-        return 1.5 * (self.f_edd/0.1 * 0.1 / self.eps) * self.M * np.ones(np.shape(r))
+        return np.where( r < self.r_max,
+                            1.5 * (self.f_edd/0.1 * 0.1 / self.eps) * self.M * np.ones(np.shape(r)),
+                            0.)
 
     def density(self, r):
         """
@@ -401,7 +417,9 @@ class AlphaDisk(BaryonicDisk):
             out : float or array_like (depending on r)
                 The density at the radius r
         """
-        return self.surface_density(r) / 2. / self.scale_height(r)
+        return np.where( r < self.r_max,
+                            self.surface_density(r) / 2. / self.scale_height(r),
+                            0.)
 
     def soundspeed(self, r):
         """
@@ -417,7 +435,9 @@ class AlphaDisk(BaryonicDisk):
                 The soundspeed at the radius r
         """
         Omega = np.sqrt(self.M/r**3)
-        return self.scale_height(r) * Omega
+        return np.where( r < self.r_max,
+                            self.scale_height(r) * Omega,
+                            0.)
 
     def velocity(self, r):
         """
@@ -432,7 +452,8 @@ class AlphaDisk(BaryonicDisk):
                 The velocity (v_r, v_phi) at the radius r
         """
         v_phi = np.sqrt(self.M/r)
-        return  (0., v_phi)
+        return  (0., v_phi) if r < self.r_max else 0.
+
 
     def mach_number(self, r):
         """
@@ -447,7 +468,9 @@ class AlphaDisk(BaryonicDisk):
             out : float or array_like (depending on r)
                 The mach number at the radius r
         """
-        return r / self.scale_height(r)
+        return np.where( r < self.r_max,
+                            r / self.scale_height(r),
+                            0.)
 
     def __str__(self):
         return f"AlphaDisk (M = {self.M}, alpha={self.alpha}, f_edd/eps={self.f_edd/self.eps})"
@@ -467,9 +490,10 @@ class BetaDisk(BaryonicDisk):
         f_edd (flaot) : The Eddington accretion rate fraction
         eps   (float) : mass-energy conversion efficiency
             (technically we don't need both of these parameters, this is just for convenience)
+        r_max (float) : the maximal radius of the disk
     """
 
-    def __init__(self, M, alpha, f_edd, eps):
+    def __init__(self, M, alpha, f_edd, eps, r_max=np.inf):
         """
         The constructor for the BetaDisk class.
 
@@ -482,12 +506,15 @@ class BetaDisk(BaryonicDisk):
                 The Eddintion accretion rate fraction
             eps   : float
                 The mass-energy conversion efficiency
+            r_max : float
+                The maximal radius of the disk
         """
         super().__init__()
         self.M = M
         self.alpha = alpha
         self.f_edd = f_edd
         self.eps = eps
+        self.r_max = r_max
 
     def surface_density(self, r):
         """
@@ -503,8 +530,10 @@ class BetaDisk(BaryonicDisk):
                 The surface density at the radius r
         """
         # convert kg/m^2 to invpc
-        return (2.1e7 * 0.1*c.g_cm2_to_invpc * (self.alpha/0.1)**(-4./5.) * (self.f_edd/self.eps)**(3./5.)
-                * (self.M / 1e6 / c.solar_mass_to_pc)**(1./5.) * (r / 10./self.M)**(-3./5.))
+        return  np.where( r < self.r_max,
+                            (2.1e7 * 0.1*c.g_cm2_to_invpc * (self.alpha/0.1)**(-4./5.) * (self.f_edd/self.eps)**(3./5.)
+                                * (self.M / 1e6 / c.solar_mass_to_pc)**(1./5.) * (r / 10./self.M)**(-3./5.)),
+                            0.)
 
     def scale_height(self, r):
         """
@@ -519,7 +548,9 @@ class BetaDisk(BaryonicDisk):
             out : float or array_like (depending on r)
                 The disk scale height at the radius r
         """
-        return 1.5 * (self.f_edd/0.1 * 0.1 / self.eps) * self.M* np.ones(np.shape(r))
+        return np.where( r < self.r_max,
+                            1.5 * (self.f_edd/0.1 * 0.1 / self.eps) * self.M* np.ones(np.shape(r)),
+                            0.)
 
     def density(self, r):
         """
@@ -533,7 +564,9 @@ class BetaDisk(BaryonicDisk):
             out : float or array_like (depending on r)
                 The density at the radius r
         """
-        return self.surface_density(r) / 2. / self.scale_height(r)
+        return np.where( r < self.r_max,
+                            self.surface_density(r) / 2. / self.scale_height(r),
+                            0.)
 
     def soundspeed(self, r):
         """
@@ -549,7 +582,9 @@ class BetaDisk(BaryonicDisk):
                 The soundspeed at the radius r
         """
         Omega = np.sqrt(self.M/r**3)
-        return self.scale_height(r) * Omega
+        return np.where(r < self.r_max,
+                            self.scale_height(r) * Omega,
+                            0.)
 
     def velocity(self, r):
         """
@@ -564,7 +599,7 @@ class BetaDisk(BaryonicDisk):
                 The velocity (v_r, v_phi) at the radius r
         """
         v_phi = np.sqrt(self.M/r)
-        return  (0., v_phi)
+        return  (0., v_phi) if r < self.r_max else 0.
 
     def mach_number(self, r):
         """
@@ -579,7 +614,9 @@ class BetaDisk(BaryonicDisk):
             out : float or array_like (depending on r)
                 The mach number at the radius r
         """
-        return r / self.scale_height(r)
+        return np.where( r < self.r_max,
+                            r / self.scale_height(r),
+                            0.)
 
     def __str__(self):
         return f"BetaDisk (M = {self.M}, alpha={self.alpha}, f_edd/eps={self.f_edd/self.eps})"
@@ -628,8 +665,9 @@ class DerdzinskiMayerDisk(BaryonicDisk):
         self.M = M
         self.M_dot = M_dot
         self.alpha = alpha
+        self.r_min = 6.*M
 
-    def opacity_scaling(rho, T):
+    def opacity_scaling(self, rho, T):
         """
         Calculates the opacity scaling of an accretion disk depending on temperature and density
         Values taken from https://arxiv.org/pdf/2205.10382.pdf
@@ -688,53 +726,57 @@ class DerdzinskiMayerDisk(BaryonicDisk):
             c_s2   : float
                 The soundspeed squared
         """
-        if r < self.r_min:
+        if r <= self.r_min:
             return 0., 0., 0., 0.
         # calculate knowns at the given radius
         Omega = np.sqrt(self.M/r**3)
         M_dot_prime = self.M_dot * (1. - np.sqrt(self.r_min/r))
         T_eff =  (3./8./np.pi * Omega**2 * M_dot_prime / self.stefan_boltzmann_constant)**(1./4.)
-        # print(f"Omega = {Omega:.3e}, M_dot_prime={M_dot_prime:.3e}, T_eff={T_eff:.3e}")
+        Q_min = 1.4
+        rho_max = Omega**2 / 2. / np.pi / Q_min
+        # print(f"Omega = {Omega:.3e}, M_dot_prime={M_dot_prime:.3e}, T_eff={T_eff:.3e}, rho_max={rho_max:.3e}")
 
+        # solve for rho, Sigma, T_mid, and c_s^2
         def f(x):
-            rho, Sigma, T_mid, c_s2 = x
+            # use exponential function to assert positivity, and logistic function to assert 0<value<max
+            sm_rho, ln_Sigma, ln_T_mid, sm_c_s2 = x
+            rho = rho_max/(1.+np.exp(-sm_rho)); Sigma = np.exp(ln_Sigma); T_mid = np.exp(ln_T_mid); c_s2 = 1./(1.+np.exp(-sm_c_s2))
 
+            Q = np.sqrt(c_s2) * Omega / np.pi / Sigma
             nu = self.alpha * c_s2 / Omega
-            kappa = DerdzinskiMayerDisk.opacity_scaling(np.max([rho/c.g_cm3_to_invpc2, 0.]), T_mid) / c.g_cm2_to_invpc # TODO: check units
-            kappa = np.inf if kappa <= 0. else kappa
+            kappa = self.opacity_scaling(rho/c.g_cm3_to_invpc2, T_mid) / c.g_cm2_to_invpc # TODO: check units
             tau_opt = kappa*Sigma/2.
+            h = np.sqrt(c_s2)/Omega
+            p_gas = self.boltzmann_constant / self.hydrogen_mass / self.mean_molecular_weight * rho * T_mid
+            p_rad = 1./2. * self.stefan_boltzmann_constant * tau_opt * T_eff**4
 
             # target values
-            rho_t = Sigma/2. * Omega / np.sqrt(c_s2)
-            Sigma_t = M_dot_prime/3./np.pi/nu
-            c_s2_t = (self.boltzmann_constant / self.hydrogen_mass / self.mean_molecular_weight *T_mid
-                             +  4./3. * self.stefan_boltzmann_constant * T_mid**4. / rho)
-            c_s2_t = np.min([1., c_s2_t])
+            rho_t = Sigma / 2. / h if Q > 1.5*Q_min else rho_max*(1.-1e-10) # assert stability in outer parts
+            Sigma_t = M_dot_prime / 3. / np.pi / nu
+            c_s2_t = (p_gas + p_rad)/ rho
             T_mid_t = (3./8. * tau_opt + 1./2. + 1./4./tau_opt)**(1./4.) * T_eff
             # print(f"kappa = {kappa*c.g_cm2_to_invpc}, tau_opt = {tau_opt}")
             # print(f"rho={rho:.3e}->{rho_t:.3e}, Sigma={Sigma:.3e}->{Sigma_t:.3e}, T_mid={T_mid:.3e}->{T_mid_t:.3e}, c_s2={c_s2:.3e}->{c_s2_t:.3e}")
-            return np.array([rho_t - rho, Sigma_t - Sigma, T_mid_t - T_mid,  c_s2_t - c_s2])
+            return np.array([np.log(rho_t/(rho_max-rho_t)) - sm_rho, np.log(Sigma_t) - ln_Sigma, np.log(T_mid_t) - ln_T_mid,  np.log(c_s2_t/(1.-c_s2_t)) - sm_c_s2])
 
         # choose initial values
         mach_number_0 = 60.
-        Sigma_0 = 1e5 * c.g_cm2_to_invpc if Sigma_0 is None else Sigma_0
+        Sigma_0 = 1e3 * c.g_cm2_to_invpc if Sigma_0 is None else Sigma_0
         rho_0 = Sigma_0 / 2. / r * mach_number_0 if rho_0 is None else rho_0
+        rho_0 = np.clip(rho_0, 1e-20, rho_max*(1.-1e-10))
         T_mid_0 = T_eff if T_mid_0 is None else T_mid_0
-        c_s2_0 = np.sqrt(self.boltzmann_constant / self.hydrogen_mass / self.mean_molecular_weight * T_mid_0
-                             +  4./3. * self.stefan_boltzmann_constant* T_mid_0**4 / rho_0)  if c_s2_0 is None else c_s2_0
-
-        # c_s2_0 = (self.boltzmann_constant / self.hydrogen_mass / self.mean_molecular_weight *T_mid_0)  if c_s2_0 is None else c_s2_0
-        # c_s2_0 = np.min([c_s2_0, 1.])
-        # Sigma_0 = M_dot_prime/ 3./np.pi/self.alpha/c_s2_0 * Omega if Sigma_0 is None else Sigma_0
-        # rho_0 = Sigma_0/2./np.sqrt(c_s2_0)*Omega if rho_0 is None else rho_0
+        c_s2_0 = (self.boltzmann_constant / self.hydrogen_mass / self.mean_molecular_weight * T_mid_0
+                             +  4./3. * self.stefan_boltzmann_constant* T_mid_0**4 / rho_0 )  if c_s2_0 is None else c_s2_0
 
         # compute solution
-        x_0 = np.array([rho_0, Sigma_0, T_mid_0, c_s2_0])
-        # print(x_0)
-        sol = root(f, x0 = x_0, method='hybr', options={'xtol':1e-10})
-        # sol = root(f, x0 = x_0, method='lm')
-        # print(sol.success, sol.message, sol.x)
-        rho, Sigma, T_mid, c_s2 = sol.x
+        x_0 = np.array([ np.log(rho_0/(rho_max-rho_0)), np.log(Sigma_0), np.log(T_mid_0), np.log(c_s2_0/(1.-c_s2_0))])
+        sol = root(f, x0 = x_0, method='lm', options={'xtol':1e-10,'ftol':1e-10})
+        if not sol.success:
+            print(sol.message, r, x_0, sol.x)
+
+        rho, Sigma, T_mid, c_s2 = np.exp(sol.x)
+        rho = rho_max /(1. + 1./rho)
+        c_s2 = 1./(1.+1./c_s2)
 
         return rho, Sigma, T_mid, c_s2
 
@@ -855,6 +897,39 @@ class DerdzinskiMayerDisk(BaryonicDisk):
         h = Sigma/2./rho
         return h
 
+    def velocity(self, r):
+        """
+        The velocity of the particles in the disk
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the velocity
+
+        Returns:
+            out : tuple
+                The velocity (v_r, v_phi) at the radius r
+        """
+        v_phi = np.sqrt(self.M/r)
+        return  (0., v_phi)
+
+    def optical_depth(self, r):
+        """
+        The optical depth of the disk
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the optical depth
+
+        Returns:
+            out : float or array_like (depending on r)
+                The optical depth at the radius r
+        """
+        rho = self.density(r)
+        T_mid = self.T_mid(r)
+        kappa = self.opacity_scaling(rho/c.g_cm3_to_invpc2, T_mid) / c.g_cm2_to_invpc # TODO: check units
+        Sigma = self.surface_density(r)
+        return kappa*Sigma/2.
+
 
     def CreateInterpolatedHalo(self, r_grid):
         """
@@ -876,13 +951,17 @@ class DerdzinskiMayerDisk(BaryonicDisk):
             # rho, Sigma, T_mid, c_s2 = self.solve_eq(r_grid[i])
             res.append([rho, Sigma, T_mid, c_s2])
         res = np.array(res)
-        rho = res[:,0]; Sigma = res[:,1]; c_s = np.sqrt(res[:,3]);
+        rho = res[:,0]; Sigma = res[:,1]; T_mid = res[:,2]; c_s = np.sqrt(res[:,3]);
         interpHalo = InterpolatedHalo(r_grid, rho, name=str(self))
-        interpHalo.surface_density = interp1d(r_grid, Sigma, kind='cubic', bounds_error=False, fill_value=(0.,0.))
-        interpHalo.mach_number = interp1d(r_grid, r_grid/Sigma * 2 * rho, kind='cubic', bounds_error=False, fill_value=(0.,0.))
-        interpHalo.scale_height = interp1d(r_grid, Sigma/2./rho, kind='cubic', bounds_error=False, fill_value=(0.,0.))
-        interpHalo.soundspeed = interp1d(r_grid, c_s, kind='cubic', bounds_error=False, fill_value=(0.,0.))
-        interpHalo.mass = interp1d(r_grid, BaryonicDisk.mass(interpHalo, r_grid), kind='cubic', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.surface_density = interp1d(r_grid, Sigma, kind='linear', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.mach_number = interp1d(r_grid, r_grid/Sigma * 2 * rho, kind='linear', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.scale_height = interp1d(r_grid, Sigma/2./rho, kind='linear', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.soundspeed = interp1d(r_grid, c_s, kind='linear', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.T_mid = interp1d(r_grid, T_mid, kind='linear', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.mass = interp1d(r_grid, BaryonicDisk.mass(interpHalo, r_grid), kind='linear', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.velocity = self.velocity
+        interpHalo.Q = self.Q
+        interpHalo.M = self.M
         interpHalo.alpha = self.alpha
         return interpHalo
 
@@ -945,6 +1024,230 @@ class DoubleExponential(MatterHalo):
         return f"DoubleExponentialDisk: M_d={self.M_d}, R_d={self.R_d}, z_d={self.z_d}"
 
 
+class TQMDisk(DerdzinskiMayerDisk):
+    """
+    The class describing a baryonic accretion disk as introduced by Thompson, Quataert & Murray
+        in https://arxiv.org/pdf/astro-ph/0503027.pdf
+        based on models of Shakura & Sunyaev and Sirko & Goodman, using an opacity description by Iglesias&Rogers, Alexander&Ferguson
+
+    Due to the integral involved, this class is only used as an intermediary to create an InterpHalo object.
+
+    Attributes:
+        r_min (float): An minimum radius below which the density is always 0
+
+        # These are the model parameters
+        M     (float) : The mass of the central black hole
+        M_dot_bh (float) : The accretion rate of the central black hole
+        eps_star (float) : The star formation efficiency
+        X (float) : The inflow velocity fraction of the speed of sound
+    """
+
+    def __init__(self, M, M_dot_bh, eps_star, X):
+        """
+        The constructor for the DerdzinskiMayerDisk class.
+
+        Parameters:
+            M : float
+                The mass of the central black hole
+            M_dot_bh : float
+                The accretion rate of the central black hole
+            eps_star : float
+                The star formation efficiency
+            X : float
+                The infall velocity as a fraction of the speed of sound
+        """
+        BaryonicDisk.__init__(self)
+        self.M = M
+        self.M_dot_bh = M_dot_bh
+        self.eps_star = eps_star
+        self.X = X
+        self.r_min = 6.*M
+
+    ''' # TODO
+    def opacity_scaling(self, rho, T):
+        """
+        Calculates the opacity scaling of an accretion disk depending on temperature and density
+
+        Parameters:
+            rho : floa
+                The density in units of TODO
+            T   : float
+                The temperature in units of Kelvin
+
+        Returns:
+            out : float
+                The Rosseland mean opacity
+        """
+        pass
+    '''
+
+
+    def solve_eq(self, r, r_last, M_dot_star_r_last, rho_0=None, Sigma_dot_0=None, T_mid_0=None, c_s2_0=None):
+        """
+        Solves the nonlinear equations of density, surface density, temperature and sound speed describing the disk
+            as given in https://arxiv.org/pdf/2101.09146.pdf
+
+        Parameters:
+            r : float
+                The radius of the point of interest
+            r_last : float
+                The radius of M_dot_star_r_last
+            M_dot_star_r_last : float
+                The value of M_dot_star, the mass loss due to star formation, at r_last -> integral is approximated in between
+            *_0   (optional): float
+                The initial guesses for the values of interest
+                can e.g. be passed if a point nearby is known already
+
+        Returns:
+            rho: float
+                The density at the radius r
+            Sigma : float
+                The surface density at radius r
+            T_mid : float
+                The midplane temperature
+            c_s2   : float
+                The soundspeed squared
+            M_dot_star_r : float
+                The new value of M_dot_star
+        """
+        if r <= self.r_min:
+            return 0., 0., 0., 0.
+        # calculate knowns at the given radius
+        Omega = np.sqrt(self.M/r**3)
+
+        M_dot_r_last = self.M_dot_bh + M_dot_star_r_last #integral over Sigma_dot until r_last
+        Delta_r = r - r_last
+        Q_min = 1.
+        rho_max = Omega**2 / 2. / np.pi / Q_min
+
+        # print(f"Omega = {Omega:.3e}, M_dot_prime={M_dot_prime:.3e}, T_eff={T_eff:.3e}")
+
+        def f(x):
+            sm_rho, ln_Sigma_dot, ln_T_mid, sm_c_s2 = x
+            rho = rho_max/(1.+np.exp(-sm_rho)); Sigma_dot = np.exp(ln_Sigma_dot); T_mid = np.exp(ln_T_mid); c_s2 = 1./(1.+np.exp(-sm_c_s2))
+
+            T_eff =  (( 3./8./np.pi * Omega**2 * self.M_dot_bh + 1./2.*self.eps_star * Sigma_dot) / self.stefan_boltzmann_constant)**(1./4.)
+            kappa = self.opacity_scaling(rho/c.g_cm3_to_invpc2, T_mid) / c.g_cm2_to_invpc # TODO: check units
+            h = np.sqrt(c_s2)/Omega
+            Sigma = 2. * rho * h
+            Q = Omega * np.sqrt(c_s2)  / np.pi / Sigma
+            tau_opt = kappa*Sigma/2.
+            p_gas = self.boltzmann_constant / self.hydrogen_mass * rho * T_mid
+            p_rad = 1./2. * self.stefan_boltzmann_constant * tau_opt * T_eff**4
+            p_tb = self.eps_star * Sigma_dot
+            M_dot_r = self.X * np.sqrt(c_s2) * 2. * np.pi * r * Sigma
+
+            # target values
+            rho_t = (p_rad + p_gas + p_tb)/c_s2 if Q > 1.5*Q_min else rho_max*(1.-1e-10) # assert stability in outer parts
+            Sigma_dot_t = 1./2./np.pi/r/Delta_r * (M_dot_r - M_dot_r_last) if Q <= 2.*Q_min else 1e-20
+            c_s2_t = np.clip((p_rad + p_gas + p_tb) / rho, 1e-20, 1.-1e-10)
+            T_mid_t = (3./8. * tau_opt + 1./2. + 1./4./tau_opt)**(1./4.) * T_eff
+
+            target = np.array([np.log(rho_t/(rho_max-rho_t)) - sm_rho, np.log(Sigma_dot_t) - ln_Sigma_dot, np.log(T_mid_t) - ln_T_mid,  np.log(c_s2_t/(1.-c_s2_t)) - sm_c_s2])
+            #print(f"rho = {rho}, Sigma_dot = {Sigma_dot}, T_mid={T_mid}, c_s2={c_s2}")
+            #print(f"kappa = {kappa*c.g_cm2_to_invpc}, tau_opt = {tau_opt}, Sigma={Sigma}, h={h}, rho={rho/rho_max}")
+            #print(f"rho={rho:.3e}->{rho_t:.3e}, Sigma_dot={Sigma_dot:.3e}->{Sigma_dot_t:.3e}, T_mid={T_mid:.3e}->{T_mid_t:.3e}, c_s2={c_s2:.3e}->{c_s2_t:.3e}")
+            #print(target)
+            return target
+
+        # choose initial values
+        T_eff_0 =  ( 3./8./np.pi * Omega**2 * self.M_dot_bh  / self.stefan_boltzmann_constant)**(1./4.)
+
+        Sigma_dot_0 = 1e-20 if Sigma_dot_0 is None else Sigma_dot_0
+        rho_0 = 1e-7*c.g_cm3_to_invpc2 if rho_0 is None else rho_0
+        T_mid_0 = T_eff_0 if T_mid_0 is None else T_mid_0
+        c_s2_0 = (self.boltzmann_constant / self.hydrogen_mass  * T_mid_0
+                             +  4./3. * self.stefan_boltzmann_constant* T_mid_0**4 / rho_0)  if c_s2_0 is None else c_s2_0
+
+
+        rho_0 = np.clip(rho_0, 1e-20, rho_max*(1.-1e-10))
+        # compute solution
+        x_0 = np.array([ np.log(rho_0/(rho_max-rho_0)), np.log(Sigma_dot_0), np.log(T_mid_0), np.log(c_s2_0/(1.-c_s2_0))])
+        sol = root(f, x0 = x_0, method='lm', options={'xtol':1e-10,'ftol':1e-10, 'maxiter':1000})
+        if not sol.success:
+            print(sol.message, r, x_0, sol.x)
+
+        rho, Sigma_dot, T_mid, c_s2 = np.exp(sol.x)
+        rho = rho_max /(1. + 1./rho)
+        c_s2 = 1./(1.+1./c_s2)
+
+        M_dot_star = M_dot_star_r_last + 2.*np.pi * r * Delta_r * Sigma_dot
+        return rho, Sigma_dot, T_mid, c_s2, M_dot_star
+
+
+    def CreateInterpolatedHalo(self, r_grid):
+        """
+        Creates an InterpolatedHalo object of this instance for a given r_grid
+        and adds the additional functions defined in this class
+
+        Parameters:
+            r_grid : array_like
+                The grid in radius on which to interpolate the class functions
+
+        Returns:
+            out : InterpolatedHalo
+                Instance of InterpolatedHalo with additional functions mimicking this class
+        """
+        res = []
+        rho = None; Sigma_dot = None; T_mid = None; c_s2 = None; M_dot_star = 0.
+        for i in range(len(r_grid)):
+            rho, Sigma_dot, T_mid, c_s2, M_dot_star = self.solve_eq(r_grid[i], r_grid[i-1] if i > 0 else 0., M_dot_star, rho_0=rho, Sigma_dot_0=Sigma_dot, T_mid_0=T_mid, c_s2_0=c_s2)
+            # rho, Sigma, T_mid, c_s2 = self.solve_eq(r_grid[i])
+            res.append([rho, Sigma_dot, T_mid, c_s2])
+        res = np.array(res)
+        rho = res[:,0]; Sigma_dot = res[:,1]; T_mid = res[:,2]; c_s = np.sqrt(res[:,3]);
+        Omega = np.sqrt(self.M/r_grid**3)
+        Sigma = 2.*rho* c_s / Omega
+
+        interpHalo = InterpolatedHalo(r_grid, rho, name=str(self))
+        interpHalo.surface_density = interp1d(r_grid, Sigma, kind='linear', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.mach_number = interp1d(r_grid, r_grid/Sigma * 2 * rho, kind='linear', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.scale_height = interp1d(r_grid, Sigma/2./rho, kind='linear', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.soundspeed = interp1d(r_grid, c_s, kind='linear', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.T_mid = interp1d(r_grid, T_mid, kind='linear', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.Sigma_dot = interp1d(r_grid, Sigma_dot, kind='linear', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.mass = interp1d(r_grid, BaryonicDisk.mass(interpHalo, r_grid), kind='cubic', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.velocity = self.velocity
+        interpHalo.M = self.M
+        interpHalo.M_dot_bh = self.M_dot_bh
+        interpHalo.eps_star = self.eps_star
+        interpHalo.X = self.X
+        return interpHalo
+
+    # Only create an InterpHalo object
+    def density(self, r):
+        pass
+
+    def surface_density(self, r):
+        pass
+
+    def soundspeed(self, r):
+        pass
+
+    def mach_number(self, r):
+        pass
+
+    def scale_height(self, r):
+        pass
+
+    def velocity(self, r):
+        """
+        The velocity of the particles in the disk
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the velocity
+
+        Returns:
+            out : tuple
+                The velocity (v_r, v_phi) at the radius r
+        """
+        v_phi = np.sqrt(self.M/r)
+        c_s = self.soundspeed(r)
+        return  ( -self.X *c_s, v_phi)
+
+    def __str__(self):
+        return f"TQMDisk (M = {self.M}, M_dot_bh={self.M_dot_bh}, X={self.X}, eps_star={self.eps_star})"
 
 
 class MiyamotoNagaiDisk(MatterHalo):

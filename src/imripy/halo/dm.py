@@ -205,7 +205,7 @@ class Spike(MatterHaloDF):
             out : Spike object
                 A spike object with the corresponding spike parameters
         """
-        return Spike(snfw.rho_spike, snfw.r_spike, snfw.alpha)
+        return Spike(snfw.rho_spike, snfw.r_spike, snfw.alpha, snfw.M_bh)
 
 
     def FromRho6(rho_6, M_bh, alpha, r_6=1e-6):
@@ -361,7 +361,7 @@ class SpikedNFW(NFW, Spike):
         alpha     (float): The power-law index of the spike profile, with condition 0 < alpha < 3
     """
 
-    def __init__(self, rho_s, r_s, r_spike, alpha):
+    def __init__(self, rho_s, r_s, r_spike, alpha, M_bh=0.):
         """
         The constructor for the SpikedNFW class
 
@@ -377,7 +377,7 @@ class SpikedNFW(NFW, Spike):
         """
         NFW.__init__(self, rho_s, r_s)
         rho_spike = rho_s * r_s/r_spike / (1+r_spike/r_s)**2
-        Spike.__init__(self, rho_spike, r_spike, alpha)
+        Spike.__init__(self, rho_spike, r_spike, alpha, M_bh)
 
     def density(self, r):
         """
@@ -433,7 +433,7 @@ class SpikedNFW(NFW, Spike):
         M_to_r = interp1d(nfw.mass(r), r, kind='cubic', bounds_error=True)
         r_h = M_to_r(2.* M_bh)
         r_spike = 0.2*r_h
-        return SpikedNFW(nfw.rho_s, nfw.r_s, r_spike, alpha)
+        return SpikedNFW(nfw.rho_s, nfw.r_s, r_spike, alpha, M_bh)
 
     def __str__(self):
         """
