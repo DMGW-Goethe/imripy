@@ -2,7 +2,7 @@ import numpy as np
 from scipy.integrate import solve_ivp, quad
 
 import time
-import imripy.constants as c
+import imripy.constants as c, imripy.merger_system as ms
 from . import forces
 
 class Classic:
@@ -311,8 +311,8 @@ class Classic:
         This class keeps track of the evolution of an inspiral.
 
         Attributes:
-            sp : merger_system.SystemProp
-                The system properties used in the evolution
+            hs : merger_system.HostSystem
+                The host system
             opt : Classic.EvolutionOptions
                 The options used during the evolution
             t : np.ndarray
@@ -326,8 +326,8 @@ class Classic:
             msg : string
                 The message of the solve_ivp integration
         """
-        def __init__(self, sp, options, t, a, msg=None):
-            self.sp = sp
+        def __init__(self, hs, options, t, a, msg=None):
+            self.hs = hs
             self.options = options
             self.msg=msg
             self.t = t
@@ -336,7 +336,111 @@ class Classic:
                 self.e = np.zeros(np.shape(t))
                 self.R = a
 
+    def handle_args(hs, ko, a_fin, t_0, t_fin, opt):
+        opt.elliptic = ko.e > 0.
 
+        # calculate relevant timescales
+        def g(e):
+            return e**(12./19.)/(1. - e**2) * (1. + 121./304. * e**2)**(870./2299.)
+
+        t_coal =  5./256. * ko.a**4 / ko.m_tot**2 / ko.m_red
+        if opt.elliptic:
+            t_coal = t_coal * 48./19. / g(ko.e)**4 * quad(lambda e: g(e)**4 *(1-e**2)**(5./2.) /e/(1. + 121./304. * e**2), 0., ko.e, limit=100)[0]   # The inspiral time according to Maggiore (2007)
+
+        if t_fin is None:
+            t_fin = 1.2 * t_coal *( 1. - a_fin**4 / ko.a**4)    # This is the time it takes with just gravitational wave emission
+
+        if a_fin == 0.:
+            a_fin = hs.r_isco     # Stop evolution at r_isco
+
+        return hs, ko, a_fin, t_0, t_fin, opt
+
+
+    def Evolve_new(sp, hs, ko, a_fin=0., t_0=0., t_fin=None, opt=EvolutionOptions()):
+        """
+        The function evolves the coupled differential equations of the semimajor axis and eccentricity of the Keplerian orbits of the inspiralling system
+            by tracking orbital energy and angular momentum loss due  to gravitational wave radiation, dynamical friction and possibly accretion
+
+        Parameters:
+            sp (SystemProp) : The object describing the properties of the inspiralling system
+            a_0  (float)    : The initial semimajor axis
+            e_0  (float)    : The initial eccentricity
+            a_fin (float)   : The semimajor axis at which to stop evolution
+            t_0    (float)  : The initial time
+            t_fin  (float)  : The time until the system should be evolved, if None then the estimated coalescence time will be used
+            opt   (EvolutionOptions) : Collecting the options for the evolution of the differential equations
+
+        Returns:
+            ev : Evolution
+                An evolution object that contains the results
+        """
+        hs, ko, a_fin, t_0, t_fin, opt = Classic.handle_args(hs, ko, a_fin, t_0, t_fin, opt)
+
+        # set scales to get rescale integration variables
+        a_scale = ko.a
+        t_scale = t_fin
+        m_scale = ko.m2 if opt.m2_change else 1.
+
+        t_step_max = t_fin
+        if opt.verbose > 0:
+            print("Evolving from ", ko.a/hs.r_isco, " to ", a_fin/hs.r_isco,"r_isco ", ("with initial eccentricity " + str(ko.e)) if opt.elliptic else " on circular orbits", " with ", opt)
+
+        # Define the evolution function
+        def dy_dt(t, y, *args):
+            hs = args[0]; opt = args[1]
+            t = t*t_scale
+
+            # Unpack array
+            ko.a, ko.e, ko.m2, ko.periapse_angle = y
+            ko.a *= a_scale; ko.m2 = ko.m2 * m_scale if opt.m2_change else ko.m2
+
+            if opt.verbose > 1:
+                tic = time.perf_counter()
+
+            da_dt, dE_dt = Classic.da_dt(sp, ko.a, ko.e, opt=opt, return_dE_dt=True)
+            de_dt = Classic.de_dt(sp, ko.a, ko.e, dE_dt=dE_dt, opt=opt) if opt.elliptic else 0.
+            dm2_dt = Classic.dm2_dt(sp, ko.a, ko.e, opt) if opt.m2_change else 0.
+            dperiapse_angle_dt = Classic.dperiapse_angle_dt(sp, ko.a, ko.e, opt) if opt.periapsePrecession else 0.
+
+            if opt.verbose > 1:
+                toc = time.perf_counter()
+                print(rf"Step: t={t : 0.1e}, a={ko.a : 0.1e}({ko.a/hs.r_isco : 0.1e} r_isco)({ko.a/a_fin:0.1e} a_fin), da/dt={da_dt : 0.1e} \\n"
+                          +  rf"\\t e={ko.e : 0.1e}, de/dt={ de_dt : 0.1e}, m2={ko.m2:0.1e}, dm2/dt={dm2_dt:0.1e}\\n"
+                           + rf"\\t elapsed real time: { toc-tic } s")
+
+
+            dy = np.array([da_dt/a_scale, de_dt, dm2_dt/m_scale, dperiapse_angle_dt])
+            return dy * t_scale
+
+        # Termination condition
+        fin_reached = lambda t,y, *args: y[0] - a_fin/a_scale
+        fin_reached.terminal = True
+
+        inside_BH = lambda t,y, *args: y[0]*a_scale * (1. - y[1]) - 8*hs.m1  # for a(1-e) < 8m_1
+        inside_BH.terminal = True
+
+        # Initial conditions
+        y_0 = np.array([ko.a / a_scale, ko.e, ko.m2/m_scale, ko.periapse_angle])
+
+        # Evolve
+        tic = time.perf_counter()
+        Int = solve_ivp(dy_dt, [t_0/t_scale, (t_0+t_fin)/t_scale], y_0, dense_output=True, args=(hs,opt), events=[fin_reached, inside_BH], max_step=t_step_max/t_scale,
+                                                                                        method = 'RK45', atol=opt.accuracy, rtol=opt.accuracy)
+        toc = time.perf_counter()
+
+        # Collect results
+        t = Int.t*t_scale
+        a = Int.y[0]*a_scale;
+        ev = Classic.EvolutionResults(hs, opt, t, a, msg=Int.message)
+        ev.e = Int.y[1] if opt.elliptic else np.zeros(np.shape(ev.t))
+        ev.m2 = Int.y[2]*m_scale if opt.m2_change else ko.m2;
+        ev.periapse_angle = Int.y[3] if opt.periapsePrecession else ko.periapse_angle
+
+        if opt.verbose > 0:
+            print(Int.message)
+            print(f" -> Evolution took {toc-tic:.4f}s")
+
+        return ev
 
     def Evolve(sp, a_0, e_0=0., a_fin=0., t_0=0., t_fin=None, opt=EvolutionOptions()):
         """
@@ -356,87 +460,9 @@ class Classic:
             ev : Evolution
                 An evolution object that contains the results
         """
-        opt.elliptic = e_0 > 0.
-
-        # calculate relevant timescales
-        def g(e):
-            return e**(12./19.)/(1. - e**2) * (1. + 121./304. * e**2)**(870./2299.)
-
-        t_coal =  5./256. * a_0**4/sp.m_total()**2 /sp.m_reduced()
-        if opt.elliptic:
-            t_coal = t_coal * 48./19. / g(e_0)**4 * quad(lambda e: g(e)**4 *(1-e**2)**(5./2.) /e/(1. + 121./304. * e**2), 0., e_0, limit=100)[0]   # The inspiral time according to Maggiore (2007)
-
-        if t_fin is None:
-            t_fin = 1.2 * t_coal *( 1. - a_fin**4 / a_0**4)    # This is the time it takes with just gravitational wave emission
-
-        if a_fin == 0.:
-            a_fin = sp.r_isco()     # Stop evolution at r_isco
-
-        # set scales to get rescale integration variables
-        a_scale = a_0
-        t_scale = t_fin
-        m_scale = sp.m2 if opt.m2_change else 1.
-
-        t_step_max = t_fin
-        if opt.verbose > 0:
-            print("Evolving from ", a_0/sp.r_isco(), " to ", a_fin/sp.r_isco(),"r_isco ", ("with initial eccentricity " + str(e_0)) if opt.elliptic else " on circular orbits", " with ", opt)
-
-        # Define the evolution function
-        def dy_dt(t, y, *args):
-            sp = args[0]; opt = args[1]
-            t = t*t_scale
-
-            # Unpack array
-            a, e, m2, periapse_angle = y
-            a *= a_scale; sp.m2 = m2 * m_scale if opt.m2_change else sp.m2
-
-            if opt.verbose > 1:
-                tic = time.perf_counter()
-
-            da_dt, dE_dt = Classic.da_dt(sp, a, e, opt=opt, return_dE_dt=True)
-            de_dt = Classic.de_dt(sp, a, e, dE_dt=dE_dt, opt=opt) if opt.elliptic else 0.
-            dm2_dt = Classic.dm2_dt(sp, a, e, opt) if opt.m2_change else 0.
-            dperiapse_angle_dt = Classic.dperiapse_angle_dt(sp, a, e, opt) if opt.periapsePrecession else 0.
-
-            if opt.verbose > 1:
-                toc = time.perf_counter()
-                print(rf"Step: t={t : 0.1e}, a={a : 0.1e}({a/sp.r_isco() : 0.1e} r_isco)({a/a_fin:0.1e} a_fin), da/dt={da_dt : 0.1e} \\n"
-                          +  rf"\\t e={e : 0.1e}, de/dt={ de_dt : 0.1e}, m2={sp.m2:0.1e}, dm2/dt={dm2_dt:0.1e}\\n"
-                           + rf"\\t elapsed real time: { toc-tic } s")
-
-
-            dy = np.array([da_dt/a_scale, de_dt, dm2_dt/m_scale, dperiapse_angle_dt])
-            return dy * t_scale
-
-        # Termination condition
-        fin_reached = lambda t,y, *args: y[0] - a_fin/a_scale
-        fin_reached.terminal = True
-
-        inside_BH = lambda t,y, *args: y[0]*a_scale * (1. - y[1]) - 8*sp.m1  # for a(1-e) < 8m_1
-        inside_BH.terminal = True
-
-        # Initial conditions
-        y_0 = np.array([a_0 / a_scale, e_0, sp.m2/m_scale, sp.pericenter_angle])
-
-        # Evolve
-        tic = time.perf_counter()
-        Int = solve_ivp(dy_dt, [t_0/t_scale, (t_0+t_fin)/t_scale], y_0, dense_output=True, args=(sp,opt), events=[fin_reached, inside_BH], max_step=t_step_max/t_scale,
-                                                                                        method = 'RK45', atol=opt.accuracy, rtol=opt.accuracy)
-        toc = time.perf_counter()
-
-        # Collect results
-        t = Int.t*t_scale
-        a = Int.y[0]*a_scale;
-        ev = Classic.EvolutionResults(sp, opt, t, a, msg=Int.message)
-        ev.e = Int.y[1] if opt.elliptic else np.zeros(np.shape(ev.t))
-        ev.m2 = Int.y[2]*m_scale if opt.m2_change else sp.m2;
-        ev.periapse_angle = Int.y[3] if opt.periapsePrecession else sp.pericenter_angle
-
-        if opt.verbose > 0:
-            print(Int.message)
-            print(f" -> Evolution took {toc-tic:.4f}s")
-
-        return ev
+        hs = ms.HostSystem(sp.m1, halo=sp.halo, D_l = sp.D, includeHaloInTotalMass=sp.includeHaloInTotalMass)
+        ko = ms.KeplerOrbit(hs, sp.m2, a_0, e=e_0, periapse_angle=sp.pericenter_angle, inclination_angle=sp.inclination_angle, prograde=opt.progradeRotation)
+        return Classic.Evolve_new(sp, hs, ko, a_fin=a_fin, t_0=t_0, t_fin=t_fin, opt=opt)
 
 
 
