@@ -63,7 +63,7 @@ class Classic:
 
 
         def __str__(self):
-            s = "Options: dissipative Forces emplyed {"
+            s = "Options: dissipative forces employed {"
             for df in self.dissipativeForces:
                 s += str(df) + ", "
             s += "}" + f", accuracy = {self.accuracy:.1e}"
@@ -148,7 +148,7 @@ class Classic:
             dE_dt = df.dE_dt(sp, a, e, opt)
             dE_dt_tot += dE_dt
             if opt.verbose > 2:
-                dE_dt_out += f"{df.name}:{dE_dt}, "
+                dE_dt_out += f"dE({df.name})/dt:{dE_dt}, "
 
         if opt.verbose > 2:
             print(dE_dt_out)
@@ -176,7 +176,7 @@ class Classic:
             dL_dt = df.dL_dt(sp, a, e, opt)
             dL_dt_tot += dL_dt
             if opt.verbose > 2:
-                dL_dt_out += f"{df.name}:{dL_dt}, "
+                dL_dt_out += f"dL({df.name})/dt:{dL_dt}, "
 
         if opt.verbose > 2:
             print(dL_dt_out)
@@ -377,7 +377,7 @@ class Classic:
         t_scale = t_fin
         m_scale = sp.m2 if opt.m2_change else 1.
 
-        t_step_max = np.inf
+        t_step_max = t_fin
         if opt.verbose > 0:
             print("Evolving from ", a_0/sp.r_isco(), " to ", a_fin/sp.r_isco(),"r_isco ", ("with initial eccentricity " + str(e_0)) if opt.elliptic else " on circular orbits", " with ", opt)
 
@@ -400,8 +400,10 @@ class Classic:
 
             if opt.verbose > 1:
                 toc = time.perf_counter()
-                print("t=", t, "a=", a, "da/dt=", da_dt, "e=", e, "de/dt=", de_dt, "m2=", sp.m2, "dm2_dt=", dm2_dt,
-                        " elapsed real time: ", toc-tic)
+                print(rf"Step: t={t : 0.1e}, a={a : 0.1e}({a/sp.r_isco() : 0.1e} r_isco)({a/a_fin:0.1e} a_fin), da/dt={da_dt : 0.1e} \\n"
+                          +  rf"\\t e={e : 0.1e}, de/dt={ de_dt : 0.1e}, m2={sp.m2:0.1e}, dm2/dt={dm2_dt:0.1e}\\n"
+                           + rf"\\t elapsed real time: { toc-tic } s")
+
 
             dy = np.array([da_dt/a_scale, de_dt, dm2_dt/m_scale, dperiapse_angle_dt])
             return dy * t_scale
@@ -410,7 +412,7 @@ class Classic:
         fin_reached = lambda t,y, *args: y[0] - a_fin/a_scale
         fin_reached.terminal = True
 
-        inside_BH = lambda t,y, *args: y[0]*a_scale * (1. - y[1]) - 2*sp.m1  # for a(1-e) < 2m_1
+        inside_BH = lambda t,y, *args: y[0]*a_scale * (1. - y[1]) - 8*sp.m1  # for a(1-e) < 8m_1
         inside_BH.terminal = True
 
         # Initial conditions

@@ -148,23 +148,25 @@ def streamline(ax, sp, opt, a_grid, j_grid, cmap='plasma'):
     da_grid = np.zeros(np.shape(a))
     dj_grid = np.zeros(np.shape(j))
 
+    # Calculate Derivatives
     for i in range(na):
         for k in range(ne):
-            if a_grid[i]* (1.-e[k,i]) < 8.*sp.m1:
+            if a_grid[i]* (1.-e[k,i]) < 6.*sp.m1: # A bit smaller than the BH to have no alialising effects at the Loss Cone
                 continue
             da_grid[k,i], dE_dt = inspiral.Classic.da_dt(sp, a_grid[i], e=e[k,i], opt=opt, return_dE_dt=True)
             dj_grid[k,i] = -e[k,i]/j[k,i] * inspiral.Classic.de_dt(sp, a_grid[i], e=e[k,i], dE_dt=dE_dt, opt=opt)
 
     dloga = da_grid/a
     dlogj = dj_grid/j
-
     speed = np.sqrt(dlogj**2 + dloga**2)
 
+    # Plot Streamlines & Strength
     im = ax.imshow(speed.T, norm='log',
                    extent = [np.log10(j_grid[0]), np.log10(j_grid[-1]), np.log10(a_grid[0]/sp.r_isco()), np.log10(a_grid[-1]/sp.r_isco())],
-                  origin = 'lower', interpolation='bilinear', aspect='auto', cmap=cmap)
+                  origin = 'lower', interpolation='bilinear', aspect='auto', cmap=cmap, zorder=1)
     strm = ax.streamplot(np.log10(j_grid), np.log10(a_grid/sp.r_isco()),
-                  dlogj.T, dloga.T, color='black')
-    ax.plot(np.log10(j_grid), np.log10(8./6./(1.-e_grid)), color='black')
-    ax.fill_between(np.log10(j_grid), np.log10(8./6./(1.-e_grid)), color='gray', alpha=1.)
+                  dlogj.T, dloga.T, color='black', zorder=1)
+    # Cover Loss cone
+    ax.plot(np.log10(j_grid), np.log10(8./6./(1.-e_grid)), color='black', zorder=2)
+    ax.fill_between(np.log10(j_grid), np.log10(8./6./(1.-e_grid)), color='gray', alpha=1., zorder=2)
     return im

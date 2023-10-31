@@ -17,7 +17,7 @@ class SystemProp:
     """
 
 
-    def __init__(self, m1, m2, halo, D=1., inclination_angle = 0., pericenter_angle=0., baryonicHalo=None, includeHaloInTotalMass=False):
+    def __init__(self, m1, m2, halo=halo.ConstHalo(0.), D=1., inclination_angle = 0., pericenter_angle=0., baryonicHalo=None, includeHaloInTotalMass=False):
         """
         The constructor for the SystemProp class
 
