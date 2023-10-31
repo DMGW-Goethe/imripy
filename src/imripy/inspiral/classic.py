@@ -72,70 +72,67 @@ class Classic:
             return s
 
 
-    def E_orbit(sp, a, e=0., opt=EvolutionOptions()):
+    def E_orbit(hs, ko, opt=EvolutionOptions()):
         """
         The function gives the orbital energy of the binary with central mass m1 with the surrounding halo and the smaller mass m2
            for a Keplerian orbit with semimajor axis a and eccentricity e
 
+        # TODO : fix inclusion of mass in halo
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit, default is 0 - a circular orbit
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : float
                 The energy of the Keplerian orbit
         """
-        return  - sp.m_total(a)*sp.m_reduced(a) / a / 2.
+        return  - ko.m_tot * ko.m_red / ko.a / 2.
 
 
-    def dE_orbit_da(sp, a, e=0., opt=EvolutionOptions()):
+    def dE_orbit_da(hs, ko, opt=EvolutionOptions()):
         """
         The function gives the derivative of the orbital energy wrt the semimajor axis a
            of the binary with central mass m1 with the surrounding halo and the smaller mass m2
            for a Keplerian orbit with semimajor axis a and eccentricity e
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : float
                 The derivative of the orbital energy wrt to a of the Keplerian orbit
         """
-        return sp.m2 * sp.mass(a) / 2. / a**2  * ( 1.  - a*sp.dmass_dr(a)/sp.mass(a) )
+        return ko.m2 * hs.mass(ko.a) / 2. / ko.a**2  * ( 1. - ko.a*hs.dmass_dr(ko.a) / hs.mass(ko.a) )
 
-    def L_orbit(sp, a, e, opt=EvolutionOptions()):
+    def L_orbit(hs, ko, opt=EvolutionOptions()):
         """
         The function gives the angular momentum of the binary with central mass m1 with the surrounding halo and the smaller mass m2
            for a Keplerian orbit with semimajor axis a and eccentricity e
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : float
                 The angular momentum of the Keplerian orbit
         """
-        L = np.sqrt(a * (1-e**2) * sp.m_total(a) * sp.m_reduced(a)**2 )
-        return L if opt.progradeRotation else -L
+        L = np.sqrt(ko.a * (1-ko.e**2) * ko.m_tot * ko.m_red**2 )
+        return L if ko.prograde else -L
         #return np.sqrt( -(1. - e**2) * sp.m_reduced(a)**3 * sp.m_total(a)**2 / 2. / Classic.E_orbit(sp, a, e))
 
 
-    def dE_dt(sp, a, e=0., opt=EvolutionOptions()):
+    def dE_dt(hs, ko, opt=EvolutionOptions()):
         """
         The function gives the total energy loss of the orbiting small black hole due to the dissipative effects
            on a Keplerian orbit with semimajor axis a and eccentricity e
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
@@ -145,7 +142,7 @@ class Classic:
         dE_dt_tot = 0.
         dE_dt_out = ""
         for df in opt.dissipativeForces:
-            dE_dt = df.dE_dt(sp, a, e, opt)
+            dE_dt = df.dE_dt(hs, ko, opt)
             dE_dt_tot += dE_dt
             if opt.verbose > 2:
                 dE_dt_out += f"dE({df.name})/dt:{dE_dt}, "
@@ -155,15 +152,14 @@ class Classic:
         return  dE_dt_tot
 
 
-    def dL_dt(sp, a, e, opt=EvolutionOptions()):
+    def dL_dt(hs, ko, opt=EvolutionOptions()):
         """
         The function gives the total angular momentum loss of the secondary object
             on a Keplerian orbit with semimajor axis a and eccentricity e
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
@@ -173,7 +169,7 @@ class Classic:
         dL_dt_tot = 0.
         dL_dt_out = ""
         for df in opt.dissipativeForces:
-            dL_dt = df.dL_dt(sp, a, e, opt)
+            dL_dt = df.dL_dt(hs, ko, opt)
             dL_dt_tot += dL_dt
             if opt.verbose > 2:
                 dL_dt_out += f"dL({df.name})/dt:{dL_dt}, "
@@ -183,15 +179,14 @@ class Classic:
         return  dL_dt_tot
 
 
-    def dm2_dt(sp, a, e=0., opt=EvolutionOptions()):
+    def dm2_dt(hs, ko, opt=EvolutionOptions()):
         """
         The function gives the secular time derivative of the mass of the secondary m2 due to accretion of a halo
             of the smaller object on a Keplerian orbit with semimajor axis a and eccentricity e
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
@@ -204,7 +199,7 @@ class Classic:
         for df in opt.dissipativeForces:
             if not df.m2_change:
                 continue
-            dm2_dt = df.dm2_dt_avg(sp, a, e, opt)
+            dm2_dt = df.dm2_dt_avg(hs, ko, opt)
             dm2_dt_tot += dm2_dt
             if opt.verbose > 2:
                 dm2_dt_out += f"{df.name}:{dm2_dt}, "
@@ -215,7 +210,7 @@ class Classic:
         return dm2_dt_tot
 
 
-    def da_dt(sp, a, e=0., opt=EvolutionOptions(), return_dE_dt=False):
+    def da_dt(hs, ko, opt=EvolutionOptions(), return_dE_dt=False):
         """
         The function gives the secular time derivative of the semimajor axis a (or radius for a circular orbit) due to gravitational wave emission and dynamical friction
             of the smaller object on a Keplerian orbit with semimajor axis a and eccentricity e
@@ -223,9 +218,8 @@ class Classic:
             E = -m_1 * m_2 / 2a
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
             dE_dt (bool)    : Whether to return dE_dt in addition to da_dt, to save computation time
 
@@ -235,8 +229,8 @@ class Classic:
             dE_dt : float
                 The secular time derivative of the orbital energy
         """
-        dE_dt = Classic.dE_dt(sp, a, e, opt)
-        dE_orbit_da = Classic.dE_orbit_da(sp, a, e, opt)
+        dE_dt = Classic.dE_dt(hs, ko, opt)
+        dE_orbit_da = Classic.dE_orbit_da(hs, ko, opt)
 
         if return_dE_dt:
             return dE_dt / dE_orbit_da, dE_dt
@@ -244,7 +238,7 @@ class Classic:
         return    ( dE_dt / dE_orbit_da )
 
 
-    def de_dt(sp, a, e, dE_dt=None, opt=EvolutionOptions()):
+    def de_dt(hs, ko, dE_dt=None, opt=EvolutionOptions()):
         """
         The function gives the secular time derivative of the eccentricity due to gravitational wave emission and dynamical friction
             of the smaller object on a Keplerian orbit with semimajor axis a and eccentricity e
@@ -253,9 +247,8 @@ class Classic:
            as given in Maggiore (2007)
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             dE_dt (float)   : Optionally, the dE_dt value if it was computed previously
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
@@ -263,21 +256,21 @@ class Classic:
             out : float
                 The secular time derivative of the eccentricity
         """
-        if e <= 0. or not opt.elliptic:
+        if ko.e <= 0. or not opt.elliptic:
             return 0.
 
-        dE_dt = Classic.dE_dt(sp, a, e, opt) if dE_dt is None else dE_dt
-        E = Classic.E_orbit(sp, a, e, opt)
-        dL_dt = Classic.dL_dt(sp, a, e, opt)
-        L = Classic.L_orbit(sp, a, e, opt)
+        dE_dt = Classic.dE_dt(hs, ko, opt) if dE_dt is None else dE_dt
+        E = Classic.E_orbit(hs, ko, opt)
+        dL_dt = Classic.dL_dt(hs, ko, opt)
+        L = Classic.L_orbit(hs, ko, opt)
 
         if opt.verbose > 2:
             print("dE_dt/E=", dE_dt/E, "2dL_dt/L=", 2.*dL_dt/L, "diff=", dE_dt/E + 2.*dL_dt/L )
 
-        return - (1.-e**2)/2./e *(  dE_dt/E + 2. * dL_dt/L   )
+        return - (1.-ko.e**2)/2./ko.e *(  dE_dt/E + 2. * dL_dt/L   )
 
 
-    def dperiapse_angle_dt(sp, a, e, opt=EvolutionOptions()):
+    def dperiapse_angle_dt(hs, ko, opt=EvolutionOptions()):
         """
         The function gives the secular time derivative of the argument of periapse due to relativistic (Schwarzschild) precession
             and the mass precession of the halo mass
@@ -285,26 +278,45 @@ class Classic:
             equation (10) of https://arxiv.org/pdf/2111.13514.pdf
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : float
-                The secular time derivative of the pericenter angle
+                The secular time derivative of the periapse angle
         """
-        T = 2.*np.pi * np.sqrt(a**3/sp.m_total())
+        a = ko.a; e = ko.e
+        T = 2.*np.pi * np.sqrt(a**3/ko.m_tot)
         # relativistic precession
-        dperiapse_angle_dt_rp = 6.*np.pi * sp.m_total() / a / (1-e**2) / T
+        dperiapse_angle_dt_rp = 6.*np.pi * ko.m_tot / a / (1-e**2) / T
 
         # mass precession
         def integrand(phi):
             r = a*(1. - e**2)/(1. + e*np.cos(phi))
-            return np.cos(phi) * sp.halo.mass(r) / sp.m_total()
+            return np.cos(phi) * hs.halo.mass(r) / ko.m_tot
         dperiapse_angle_dt_m =  1./e / T  * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
         return dperiapse_angle_dt_rp + dperiapse_angle_dt_m
+
+
+    def dinclination_angle_dt(hs, ko, opt=EvolutionOptions()):
+        """
+
+
+        """
+        di_dt_tot = 0.
+        di_dt_out = ""
+        for df in opt.dissipativeForces:
+            di_dt = df.dinclination_angle_dt(hs, ko, opt)
+            di_dt_tot += di_dt
+            if opt.verbose > 2:
+                di_dt_out += f"di({df.name})/dt:{di_dt}, "
+
+        if opt.verbose > 2:
+            print(di_dt_out)
+        return di_dt_tot
+
 
     class EvolutionResults:
         """
@@ -356,7 +368,7 @@ class Classic:
         return hs, ko, a_fin, t_0, t_fin, opt
 
 
-    def Evolve_new(sp, hs, ko, a_fin=0., t_0=0., t_fin=None, opt=EvolutionOptions()):
+    def Evolve_new(hs, ko, a_fin=0., t_0=0., t_fin=None, opt=EvolutionOptions()):
         """
         The function evolves the coupled differential equations of the semimajor axis and eccentricity of the Keplerian orbits of the inspiralling system
             by tracking orbital energy and angular momentum loss due  to gravitational wave radiation, dynamical friction and possibly accretion
@@ -397,10 +409,10 @@ class Classic:
             if opt.verbose > 1:
                 tic = time.perf_counter()
 
-            da_dt, dE_dt = Classic.da_dt(sp, ko.a, ko.e, opt=opt, return_dE_dt=True)
-            de_dt = Classic.de_dt(sp, ko.a, ko.e, dE_dt=dE_dt, opt=opt) if opt.elliptic else 0.
-            dm2_dt = Classic.dm2_dt(sp, ko.a, ko.e, opt) if opt.m2_change else 0.
-            dperiapse_angle_dt = Classic.dperiapse_angle_dt(sp, ko.a, ko.e, opt) if opt.periapsePrecession else 0.
+            da_dt, dE_dt = Classic.da_dt(hs, ko, opt=opt, return_dE_dt=True)
+            de_dt = Classic.de_dt(hs, ko, dE_dt=dE_dt, opt=opt) if opt.elliptic else 0.
+            dm2_dt = Classic.dm2_dt(hs, ko, opt) if opt.m2_change else 0.
+            dperiapse_angle_dt = Classic.dperiapse_angle_dt(hs, ko, opt) if opt.periapsePrecession else 0.
 
             if opt.verbose > 1:
                 toc = time.perf_counter()
@@ -462,7 +474,7 @@ class Classic:
         """
         hs = ms.HostSystem(sp.m1, halo=sp.halo, D_l = sp.D, includeHaloInTotalMass=sp.includeHaloInTotalMass)
         ko = ms.KeplerOrbit(hs, sp.m2, a_0, e=e_0, periapse_angle=sp.pericenter_angle, inclination_angle=sp.inclination_angle, prograde=opt.progradeRotation)
-        return Classic.Evolve_new(sp, hs, ko, a_fin=a_fin, t_0=t_0, t_fin=t_fin, opt=opt)
+        return Classic.Evolve_new(hs, ko, a_fin=a_fin, t_0=t_0, t_fin=t_fin, opt=opt)
 
 
 

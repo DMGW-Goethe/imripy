@@ -58,18 +58,16 @@ class DissipativeForce:
         return v_rel, v_rel_r, v_rel_phi
 
     @staticmethod
-    def get_orbital_elements(sp, a, e, phi, opt):
+    def get_orbital_elements(hs, ko, phi, opt):
         """
         Calculates the orbital position and velocities for the secondary given the Keplerian paramters
 
         Parameters
         ---------
-            sp : merger_system.SystemProp
-                Describing the binary system
-            a  : float
-                The semimajor axis
-            e  : float
-                The eccentricity
+            hs : merger_system.HostSystem
+                Describing the host system
+            ko : merger_system.KeplerOrbit
+                Describing the keplerian orbit
             phi : float
                 The true anomaly of the object
             opt : inspiral.Classic.EvolutionOptions
@@ -82,23 +80,25 @@ class DissipativeForce:
             v_r (float)     : The velocity in r direction
             v_phi (float)   : The velocity in phi direction
         """
+        a = ko.a; e = ko.e
         r = a*(1. - e**2)/(1. + e*np.cos(phi))
-        v = np.sqrt(sp.m_total(a) *(2./r - 1./a))
-        v_phi = r * np.sqrt(sp.m_total(a)*a*(1.-e**2))/r**2
+        v = np.sqrt(ko.m_tot *(2./r - 1./a))
+        v_phi = r * np.sqrt(ko.m_tot*a*(1.-e**2))/r**2
         v_r = np.sqrt(np.max([v**2 - v_phi**2, 0.]))
         # print(r, v, (v_r, v_phi))
         v_phi = v_phi if opt.progradeRotation else -v_phi
         return r, v, v_r, v_phi
 
 
-    def F(self, sp, r, v, opt):
+    def F(self, hs, ko, r, v, opt):
         """
         Placeholder function that models the dissipative force strength.
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
+            hs (HostSystem) : The object describing the properties of the host system
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
+            r  (float)      : The radius of the secondary (as in total distance to the MBH)
+            v  (float)      : TODO
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
@@ -110,70 +110,95 @@ class DissipativeForce:
         pass
 
 
-    def dE_dt(self, sp, a, e, opt):
+    def dE_dt(self, hs, ko, opt):
         """
         The function calculates the energy loss due to a force F(r,v) by averaging over a Keplerian orbit
            with semimajor axis a and eccentricity e
         According to https://arxiv.org/abs/1908.10241
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : float
                 The energy loss due to accretion
         """
-        if  isinstance(a, (collections.Sequence, np.ndarray)):
-            return np.array([self.dE_dt(sp, a_i, e, opt) for a_i in a])
+        a = ko.a; e = ko.e
+        if  isinstance(ko, (collections.Sequence, np.ndarray)):
+            return np.array([self.dE_dt(hs, ko_i, opt) for ko_i in ko])
         if e == 0.:
-            v = sp.omega_s(a)*a
-            r, v, v_r, v_phi = self.get_orbital_elements(sp, a, 0., 0., opt)
-            F = self.F(sp, r, (v_r, v_phi), opt)
+            v = hs.omega_s(a)*a
+            r, v, v_r, v_phi = self.get_orbital_elements(hs, ko, 0., opt)
+            F = self.F(hs, ko, r, (v_r, v_phi), opt)
             F_proj = F[1]*v_phi if isinstance(F, tuple) else F*v
             return - F_proj
         else:
             def integrand(phi):
-                r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
-                F = self.F(sp, r, (v_r, v_phi), opt)
+                r, v, v_r, v_phi = self.get_orbital_elements(hs, ko, phi, opt)
+                F = self.F(hs, ko, r, (v_r, v_phi), opt)
                 F_proj = (v_r*F[0] + v_phi*F[1]) if isinstance(F, tuple) else F*v
                 return F_proj / (1.+e*np.cos(phi))**2
             return -(1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
 
-    def dL_dt(self, sp, a, e, opt):
+    def dL_dt(self, hs, ko, opt):
         """
         The function calculates the angular momentum loss due to a force F(r,v) by averaging over a Keplerian orbit
            with semimajor axis a and eccentricity e
         According to https://arxiv.org/abs/1908.10241
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : float
                 The angular momentum loss due to accretion
         """
+        a = ko.a; e = ko.e
         def integrand(phi):
-            r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
-            F = self.F(sp, r, (v_r, v_phi), opt)
-            F_proj = F[1] * r if isinstance(F, tuple) else F/v *np.sqrt(sp.m_total(a) * a*(1.-e**2))
+            r, v, v_r, v_phi = self.get_orbital_elements(hs, ko, phi, opt)
+            F = self.F(hs, ko, r, (v_r, v_phi), opt)
+            F_proj = F[1] * r if isinstance(F, tuple) else F/v *np.sqrt(ko.m_tot * a*(1.-e**2))
             return F_proj / (1.+e*np.cos(phi))**2
         return -(1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
-    def dm2_dt(self, sp, r, v, opt):
+    def dinclination_angle_dt(self, hs, ko, opt):
+        """
+        The function calculates the inclination agnle change due to a force F(r,v)
+            calculated with osculating orbital elements
+
+        Parameters:
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+
+        Returns:
+            out : float
+                The angular momentum loss due to accretion
+        """
+        Omega = hs.omega_s(a)
+        def integrand(phi):
+            r, v, v_r, v_phi = self.get_orbital_elements(hs, ko, phi, opt)
+            F = self.F(hs, ko, r, (v_r, v_phi), opt)
+            W = F[2] / ko.m2
+            di_dt = r * np.cos(ko.periapse_angle + phi) * W / Omega / a**2 / np.sqrt(1-e**2)
+            return  di_dt / (1.+e*np.cos(phi))**2
+        return -(1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
+
+
+    def dm2_dt(self, hs, ko, r, v, opt):
         """
         Placeholder function that models the mass gain/loss
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
+            hs (SystemProp) : The object describing the properties of the host system
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
+            r  (float)      : The radius of the secondary
+            v  (float)      : The velocity of the secondary
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
@@ -183,7 +208,7 @@ class DissipativeForce:
         return 0.
 
 
-    def dm2_dt_avg(self, sp, a, e, opt):
+    def dm2_dt_avg(self, hs, ko, opt):
         """
         The function gives the mass gain due to accretion of the small black hole inside of a halo
            on a Keplerian orbit with semimajor axis a and eccentricity e
@@ -191,26 +216,26 @@ class DissipativeForce:
             for an elliptic orbit the average of the expression is used
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : float
                 The mass gain of the secondary
         """
+        a = ko.a; e = ko.e
         dm2_dt = 0.
         if e == 0.:
-            v_s = sp.omega_s(a)*a
-            dm2_dt = self.dm2_dt(sp, a, v_s, opt)
+            v_s = hs.omega_s(a)*a
+            dm2_dt = self.dm2_dt(hs, ko, a, v_s, opt)
         else:
             if  isinstance(a, (collections.Sequence, np.ndarray)):
-                return np.array([self.dm2_dt_avg(sp, a_i, e, opt) for a_i in a])
+                return np.array([self.dm2_dt_avg(hs, a_i, e, opt) for a_i in a])
             def integrand(phi):
                 r = a*(1. - e**2)/(1. + e*np.cos(phi))
-                v_s = np.sqrt(sp.m_total(a) *(2./r - 1./a))
-                return self.dm2_dt(sp, r, v_s, opt) / (1.+e*np.cos(phi))**2
+                v_s = np.sqrt(ko.m_tot *(2./r - 1./a))
+                return self.dm2_dt(hs, ko, r, v_s, opt) / (1.+e*np.cos(phi))**2
             dm2_dt = (1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
         return dm2_dt
@@ -229,16 +254,15 @@ class StochasticForce(DissipativeForce):
     name = "StochasticForce"
 
 
-    def dEdL_diffusion(self, sp, a, e, opt):
+    def dEdL_diffusion(self, hs, ko, opt):
         """
         Placeholder function that should return the Brownian motion in energy E and angular momentum L.
         The variances of E, L are expected on the diagonal [0,0], [1,1], and the covariance
          on the offdiagonal.
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
@@ -252,41 +276,45 @@ class StochasticForce(DissipativeForce):
 class GWLoss(DissipativeForce):
     name = "GWLoss"
 
-    def dE_dt(self, sp, a, e, opt):
+    def dE_dt(self, hs, ko, opt):
         """
         The function gives the energy loss due to radiation of gravitational waves
             for a Keplerian orbit with semimajor axis a and eccentricity e
         According to Maggiore (2007)
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : float
                 The energy loss due to radiation of gravitational waves of an Keplerian orbit
         """
-        return -32./5. * sp.m_reduced(a)**2 * sp.m_total(a)**3 / a**5  / (1. - e**2)**(7./2.) * (1. + 73./24. * e**2 + 37./96. * e**4)
+        return -32./5. * ko.m_red**2 * ko.m_tot**3 / ko.a**5  / (1. - ko.e**2)**(7./2.) * (1. + 73./24. * ko.e**2 + 37./96. * ko.e**4)
 
-    def dL_dt(self, sp, a, e, opt):
+    def dL_dt(self, hs, ko, opt):
         """
         The function gives the loss of angular momentum due to radiation of gravitational waves of the smaller object
            on a Keplerian orbit with semimajor axis a and eccentricity e
         According to Maggiore (2007)
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : float
                 The angular momentum loss due to radiation of gravitational waves
         """
-        return -32./5. * sp.m_reduced(a)**2 * sp.m_total(a)**(5./2.) / a**(7./2.)  / (1. - e**2)**2 * (1. + 7./8.*e**2)
+        return -32./5. * ko.m_red**2 * ko.m_tot**(5./2.) / ko.a**(7./2.)  / (1. - ko.e**2)**2 * (1. + 7./8.*ko.e**2)
+
+    def dinclination_angle_dt(self, hs, ko, opt):
+        """
+        GW emission does not change the inclination (at this order)
+        """
+        return 0.
 
 
 class DynamicalFriction(DissipativeForce):
@@ -299,7 +327,7 @@ class DynamicalFriction(DissipativeForce):
         self.haloPhaseSpaceDescription = haloPhaseSpaceDescription
         self.includeHigherVelocities = haloPhaseSpaceDescription and includeHigherVelocities
 
-    def F(self, sp, r, v, opt):
+    def F(self, hs, ko, r, v, opt):
         """
         The function gives the force of the dynamical friction of an object inside a dark matter halo at radius r (since we assume a spherically symmetric halo)
             and with velocity v
@@ -311,7 +339,8 @@ class DynamicalFriction(DissipativeForce):
             v_max can be provided via self.v_max. If v_max is None, it is taken to be the orbital velocity.
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             r  (float)      : The radius of the orbiting object
             v  (float or tuple)   : The speed of the orbiting object, either as |v|, or (v_r, v_theta) split into the direction of r, theta
             opt (EvolutionOptions): The options for the evolution of the differential equations
@@ -321,14 +350,14 @@ class DynamicalFriction(DissipativeForce):
                 The magnitude of the dynamical friction force - antiparralel to the velocity
         """
         ln_Lambda = self.ln_Lambda
-        halo = self.halo or sp.halo
+        halo = self.halo or hs.halo
         v_gas = halo.velocity(r)
         v_rel = ( self.get_relative_velocity(v, v_gas)[0] if opt.considerRelativeVelocities
                         else self.get_relative_velocity(v, 0.)[0] )
         # print(v, v_gas, v_rel)
 
         if ln_Lambda < 0.:
-            ln_Lambda = np.log(sp.m1/sp.m2)/2.
+            ln_Lambda = np.log(ko.m1/ko.m2)/2.
 
         relCovFactor = 1.
         if self.relativisticCorrections:
@@ -357,9 +386,15 @@ class DynamicalFriction(DissipativeForce):
             bracket = (alpha * ln_Lambda + beta + delta)
             #print(rf"r={r:.3e}({r/sp.r_isco():.3e} r_isco), v={v_rel:.3e}, alpha={alpha:.3e}, beta={beta:.3e}, delta={delta:.3e}, bracket={bracket:.3e}")
 
-        F_df = 4.*np.pi * relCovFactor * sp.m2**2 * density * bracket / v_rel**2
+        F_df = 4.*np.pi * relCovFactor * ko.m2**2 * density * bracket / v_rel**2
         F_df = np.nan_to_num(F_df)
         return F_df
+
+    def dinclination_angle_dt(self, hs, ko, opt):
+        """
+        For now we assume the (DM) distribution to be spherically symmetric, so there is no inclination change
+        """
+        return 0.
 
 
 class GasDynamicalFriction(DissipativeForce):
@@ -380,13 +415,14 @@ class GasDynamicalFriction(DissipativeForce):
         self.frictionModel = frictionModel
         self.disk = disk
 
-    def F(self, sp, r, v, opt):
+    def F(self, hs, ko, r, v, opt):
         """
         The function gives the force of the dynamical friction of an object inside a gaseous disk at radius r
             and with velocity v
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             r  (float)      : The radius of the orbiting object
             v  (float or tuple)   : The speed of the orbiting object, either as |v|, or (v_r, v_theta) split into the direction of r, theta
             opt (EvolutionOptions): The options for the evolution of the differential equations
@@ -396,14 +432,14 @@ class GasDynamicalFriction(DissipativeForce):
                 The magnitude of the dynamical friction force
         """
         ln_Lambda = self.ln_Lambda
-        disk = self.disk or sp.baryonicHalo
+        disk = self.disk or hs.halo
         v_gas = disk.velocity(r)
         v_rel, v_rel_r, v_rel_phi = ( self.get_relative_velocity(v, v_gas) if opt.considerRelativeVelocities
                         else self.get_relative_velocity(v, 0.) )
         # print(v, v_gas, v_rel)
 
         if ln_Lambda < 0.:
-            ln_Lambda = np.log(sp.m1/sp.m2)/2.
+            ln_Lambda = np.log(ko.m1/ko.m2)/2.
 
         if self.frictionModel == 'Ostriker':
             c_s = disk.soundspeed(r)
@@ -413,10 +449,10 @@ class GasDynamicalFriction(DissipativeForce):
             ln_Lambda = I
         elif self.frictionModel == 'Sanchez-Salcedo':
                 H = disk.scale_height(r)
-                R_acc = 2.*sp.m2 /v_rel**2
+                R_acc = 2.*ko.m2 /v_rel**2
                 ln_Lambda =  7.15*H/R_acc
 
-        F_df = 4.*np.pi * sp.m2**2 * disk.density(r) * ln_Lambda / v_rel**2
+        F_df = 4.*np.pi * ko.m2**2 * disk.density(r) * ln_Lambda / v_rel**2
         #print(v, v_gas, v_rel, F_df)
         F_df = np.nan_to_num(F_df)
         return F_df*v_rel_r/v_rel, F_df*v_rel_phi/v_rel
@@ -444,7 +480,7 @@ class AccretionLoss(DissipativeForce):
         self.withSoundspeed = withSoundspeed
         self.includeRecoil = includeRecoil
 
-    def BH_cross_section(self, sp, r, v_rel, opt):
+    def BH_cross_section(self, hs, ko, r, v_rel, opt):
         """
         The function gives the cross section of a small black hole (m2) moving through a halo of particles
         Choose model through opt.accretionModel parameter
@@ -452,7 +488,8 @@ class AccretionLoss(DissipativeForce):
             'Bondi-Hoyle' : according to https://arxiv.org/pdf/1302.2646.pdf
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system, the small black hole is taken to be sp.m2
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             v_rel  (float)      : The relative velocity of the black hole to the halo
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
@@ -460,26 +497,27 @@ class AccretionLoss(DissipativeForce):
             out : float
                 The black hole cross section
         """
-        halo = self.halo or sp.halo
+        halo = self.halo or hs.halo
         if self.accretionModel == 'Bondi-Hoyle':
 
             dm_soundspeed2 = halo.soundspeed(r)**2 if self.withSoundspeed else 0.
 
-            return 4.*np.pi * sp.m2**2 / (v_rel**2 +  dm_soundspeed2)**(3./2.)  / v_rel
+            return 4.*np.pi * ko.m2**2 / (v_rel**2 +  dm_soundspeed2)**(3./2.)  / v_rel
 
         elif self.accretionModel == 'Collisionless':
-            return (np.pi * sp.m2**2. / v_rel**2.) * (8. * (1. - v_rel**2.))**3 / (4. * (1. - 4. * v_rel**2. + (1. + 8. * v_rel**2.)**(1./2.)) * (3. - (1. + 8. * v_rel**2.)**(1./2.))**2.)
+            return (np.pi * ko.m2**2. / v_rel**2.) * (8. * (1. - v_rel**2.))**3 / (4. * (1. - 4. * v_rel**2. + (1. + 8. * v_rel**2.)**(1./2.)) * (3. - (1. + 8. * v_rel**2.)**(1./2.))**2.)
             #return 16. * np.pi * sp.m2**2 / v**2  * (1. + v**2)
 
 
-    def dm2_dt(self, sp, r, v, opt):
+    def dm2_dt(self, hs, ko, r, v, opt):
         """
         The function gives the mass gain due to accretion of the small black hole inside of the dark matter halo
            for a small black hole with relative velocity v to the halo at radius r
         The equation of https://arxiv.org/pdf/1711.09706.pdf is used
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             r  (float)      : The radial position of the black hole in the halo
             v  (float or tuple)   : The speed of the orbiting object, either as |v|, or (v_r, v_theta) split into the direction of r, theta
             opt (EvolutionOptions): The options for the evolution of the differential equations
@@ -488,21 +526,22 @@ class AccretionLoss(DissipativeForce):
             out : float
                 The mass gain due to accretion
         """
-        halo = self.halo or sp.halo
+        halo = self.halo or hs.halo
         v_gas = halo.velocity(r)
         v_rel = ( self.get_relative_velocity(v, v_gas)[0] if opt.considerRelativeVelocities
                         else self.get_relative_velocity(v, 0.)[0] )
         v = np.sqrt( v[0]**2 + v[1]**2 ) if isinstance(v, tuple) else v
-        return halo.density(r) * v * self.BH_cross_section(sp, r, v_rel, opt)
+        return halo.density(r) * v * self.BH_cross_section(hs, ko, r, v_rel, opt)
 
 
-    def F(self, sp, r, v, opt):
+    def F(self, hs, ko, r, v, opt):
         """
         The function gives the total force acting on an object inside a dark matter halo at radius r (since we assume a spherically symmetric halo)
             and with velocity v through accretion effects
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             r  (float)      : The radius of the orbiting object
             v  (float or tuple)   : The speed of the orbiting object, either as |v|, or (v_r, v_theta) split into the direction of r, theta
             opt (EvolutionOptions): The options for the evolution of the differential equations
@@ -511,17 +550,18 @@ class AccretionLoss(DissipativeForce):
             out : float
                 The magnitude of the accretion force
         """
-        F_acc = self.F_acc(sp, r, v, opt)
-        F_acc_rec = self.F_acc_recoil(sp, r, v, opt) if self.includeRecoil else 0.
+        F_acc = self.F_acc(hs, ko, r, v, opt)
+        F_acc_rec = self.F_acc_recoil(hs, ko, r, v, opt) if self.includeRecoil else 0.
         return F_acc + F_acc_rec
 
-    def F_acc(self, sp, r, v, opt):
+    def F_acc(self, hs, ko, r, v, opt):
         """
         The function gives the force mimicing the accretion effects of an object inside a dark matter halo at radius r (since we assume a spherically symmetric halo)
             and with velocity v
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             r  (float)      : The radius of the orbiting object
             v  (float or tuple)   : The speed of the orbiting object, either as |v|, or (v_r, v_theta) split into the direction of r, theta
             opt (EvolutionOptions): The options for the evolution of the differential equations
@@ -530,21 +570,22 @@ class AccretionLoss(DissipativeForce):
             out : float
                 The magnitude of the accretion force
         """
-        halo = self.halo or sp.halo
+        halo = self.halo or hs.halo
         v_gas = halo.velocity(r)
         v_rel = ( self.get_relative_velocity(v, v_gas)[0] if opt.considerRelativeVelocities
                         else self.get_relative_velocity(v, 0.)[0] )
         v = np.sqrt( v[0]**2 + v[1]**2 ) if isinstance(v, tuple) else v
-        return self.dm2_dt(sp, r, v_rel, opt) *  v
+        return self.dm2_dt(hs, ko, r, v_rel, opt) *  v
 
 
-    def F_recoil(self, sp, r, v, opt):
+    def F_recoil(self, hs, ko, r, v, opt):
         """
         The function gives the recoil force of the accretion of an object inside a dark matter halo at radius r (since we assume a spherically symmetric halo)
             and with velocity v
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             r  (float)      : The radius of the orbiting object
             v  (float or tuple)   : The speed of the orbiting object, either as |v|, or (v_r, v_theta) split into the direction of r, theta
             opt (EvolutionOptions): The options for the evolution of the differential equations
@@ -553,12 +594,18 @@ class AccretionLoss(DissipativeForce):
             out : float
                 The magnitude of the accretion recoil force
         """
-        halo = self.halo or sp.halo
+        halo = self.halo or hs.halo
         v_gas = halo.velocity(r)
         v_rel = ( self.get_relative_velocity(v, v_gas)[0] if opt.considerRelativeVelocities
                         else self.get_relative_velocity(v, 0.)[0] )
         v = np.sqrt( v[0]**2 + v[1]**2 ) if isinstance(v, tuple) else v
-        return self.dm2_dt(sp, r, v_rel, opt) * v
+        return self.dm2_dt(hs, ko, r, v_rel, opt) * v
+
+    def dinclination_angle_dt(self, hs, ko, a, e, opt):
+        """
+        For now we assume the (DM) distribution to be spherically symmetric, so there is no inclination change
+        """
+        return 0.
 
 
 class GasInteraction(DissipativeForce):
@@ -572,7 +619,7 @@ class GasInteraction(DissipativeForce):
         self.fudgeFactor = fudgeFactor
         self.disk = disk
 
-    def F(self, sp, r, v, opt):
+    def F(self, hs, ko, r, v, opt):
         """
         The function gives the force an accretion disk would exert on a smaller black hole for different models of gas interaction
 
@@ -581,7 +628,8 @@ class GasInteraction(DissipativeForce):
             'dynamicalFriction' : according to https://arxiv.org/pdf/2006.10206.pdf
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             r  (float)      : The radius of the orbiting object
             v  (float or tuple)   : The speed of the orbiting object, either as |v|, or (v_r, v_theta) split into the direction of r, theta
             opt (EvolutionOptions): The options for the evolution of the differential equations
@@ -590,7 +638,7 @@ class GasInteraction(DissipativeForce):
             out : float
                 The magnitude of the force through gas interactions
         """
-        disk = self.disk or sp.baryonicHalo
+        disk = self.disk or hs.halo
         #v_gas = disk.velocity(r)
         #v_rel = ( self.get_relative_velocity(v, v_gas)[0] if opt.considerRelativeVelocities
         #                else self.get_relative_velocity(v, 0.)[0] )
@@ -598,23 +646,23 @@ class GasInteraction(DissipativeForce):
         if self.gasInteraction == 'gasTorqueLossTypeI':
             mach_number = disk.mach_number(r)
             Sigma = disk.surface_density(r)
-            Omega = sp.omega_s(r)
-            Gamma_lin = Sigma*r**4 * Omega**2 * (sp.m2/sp.m1)**2 * mach_number**2
+            Omega = hs.omega_s(r)
+            Gamma_lin = Sigma*r**4 * Omega**2 * (ko.m2/ko.m1)**2 * mach_number**2
 
-            F_gas = Gamma_lin * sp.m2/sp.m1 / r
+            F_gas = Gamma_lin * ko.m2/ko.m1 / r
 
         elif self.gasInteraction == 'gasTorqueLossTypeII':
             mach_number = disk.mach_number(r)
             Sigma = disk.surface_density(r)
             alpha = disk.alpha if hasattr(disk, 'alpha') else self.alpha # requires ShakuraSunyaevDisk atm
 
-            Omega = sp.omega_s(r)
+            Omega = hs.omega_s(r)
             Gamma_vis = 3.*np.pi * alpha * Sigma * r**4 * Omega**2 / mach_number**2 if mach_number > 0. else 0.
 
             fudge_factor = self.fudgeFactor
             Gamma_gas = fudge_factor * Gamma_vis
 
-            F_gas = Gamma_gas * sp.m2/sp.m1 / r
+            F_gas = Gamma_gas * ko.m2/ko.m1 / r
 
         '''
         elif self.gasInteraction == 'gasTorqueLossTypeITanaka':
@@ -623,17 +671,17 @@ class GasInteraction(DissipativeForce):
             n_alpha = -1.
             n_fedd = -3.
             n_M1 = 1.
-            A = (C * (sp.halo.alpha/0.1)**n_alpha * (sp.halo.f_edd/sp.halo.eps)**n_fedd
-                    * (sp.m1/1e6/c.solar_mass_to_pc)**n_M1 )
-            L0 = 32./5. * sp.m2 / sp.m1 * (r/sp.m1)**(-7./2.)
-            L_disk = A * (r/10./sp.m1)**n_r * L0
+            A = (C * (hs.halo.alpha/0.1)**n_alpha * (hs.halo.f_edd/hs.halo.eps)**n_fedd
+                    * (hs.m1/1e6/c.solar_mass_to_pc)**n_M1 )
+            L0 = 32./5. * ko.m2 / hs.m1 * (r/hs.m1)**(-7./2.)
+            L_disk = A * (r/10./hs.m1)**n_r * L0
 
-            F_gas = L_disk * sp.m2/sp.m1 / r
+            F_gas = L_disk * ko.m2/ko.m1 / r
 
         elif self.gasInteraction == 'hydrodynamicDragForce':
             C_d = 1.
-            R_p = 2.*sp.m2
-            rho = sp.halo.density(r)
+            R_p = 2.*ko.m2
+            rho = hs.halo.density(r)
 
             F_gas = 1./2. * C_d * np.pi * rho * v_rel**2 * R_p**2
         '''
@@ -660,7 +708,7 @@ class StellarDiffusion(StochasticForce):
     """
     name = "Stellar Diffusion"
 
-    def __init__(self, stellarDistribution : imripy.halo.MatterHaloDF, sp, CoulombLogarithm=None, E_m_s = c.solar_mass_to_pc, E_m_s2 = c.solar_mass_to_pc**2, m=None):
+    def __init__(self, stellarDistribution : imripy.halo.MatterHaloDF, m1, m2, E_m_s = c.solar_mass_to_pc, E_m_s2 = c.solar_mass_to_pc**2, CoulombLogarithm=None):
         """
         The constructor for the StellarDiffusion class
         The values are initialized according to https://arxiv.org/pdf/2304.13062.pdf if not provided
@@ -668,38 +716,38 @@ class StellarDiffusion(StochasticForce):
         Parameters:
             istellarDistribution : imripy.halo.MatterHaloDF
                 Object describing the stellar distribution
-            sp : imripy.merger_system.SystemProp
-                The system prop object describing the merger system
+            m1 : float
+                The mass of the central MBH
+            m2 : float
+                The mass of the secondary
             E_m_s : (optional) float
                 The first mass moment of the stellar distribution
             E_m_s2 :(optional)  float
                 The second mass moment of the stellar distribution
             CoulombLogarithm : (optional) float
-                The CoulombLogarithm describing the strength of the scattering - either this or sp must be provided
-            m : (optional) float
-                The mass of the secondary object subject to stellar diffusion - either this or sp must be provided
+                The CoulombLogarithm describing the strength of the scattering - alternatively m1 is used for estimation
         """
         super().__init__()
         self.stellarDistribution = stellarDistribution
 
         self.E_m_s = E_m_s
         self.E_m_s2 = E_m_s2
-        self.m = m or sp.m2
-        self.CoulombLogarithm = CoulombLogarithm or np.log(0.4 * sp.m1 / self.E_m_s)
+        self.m = m2
+        self.CoulombLogarithm = CoulombLogarithm or np.log(0.4 * m1 / self.E_m_s)
 
-        self.calc_velocity_diffusion_coeff(sp)
+        self.calc_velocity_diffusion_coeff(m1)
 
 
 
-    def calc_velocity_diffusion_coeff(self, sp):
+    def calc_velocity_diffusion_coeff(self, m1, acc=1e-8):
         """
         Calculates the velocity diffusion coefficients and saves them in the class for later use as a lambda function.
         This should only be needed once (or when the distribution function stellarDistribution.f changes)
         Eq (24)-(28) from https://arxiv.org/pdf/2304.13062.pdf
         """
 
-        r_grid = np.geomspace(2.*sp.m1, 1e8*2*sp.m1, 60)
-        v_grid = np.geomspace( np.sqrt(2.* self.stellarDistribution.potential(r_grid[-1])/10.), np.sqrt(2.*self.stellarDistribution.potential(r_grid[0])), 61)
+        r_grid = np.geomspace(2.*m1, 1e8*2*m1, 50)
+        v_grid = np.geomspace( np.sqrt(2.* self.stellarDistribution.potential(r_grid[-1]))/1e4, np.sqrt(2.*self.stellarDistribution.potential(r_grid[0]))*1e4, 101)
         R_grid, V_grid = np.meshgrid(r_grid, v_grid)
 
         # The distribution function depends on the specific energy Eps
