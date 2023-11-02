@@ -5,6 +5,10 @@ import collections
 
 import imripy.constants as c
 import imripy.halo
+from imripy import kepler
+
+import matplotlib.pyplot as plt # for debugging only
+
 
 
 class DissipativeForce:
@@ -117,7 +121,7 @@ class DissipativeForce:
             F = self.F(hs, ko, r, v, opt)
             e_z = ko.get_orbital_vectors_in_fundamental_xy_plane(phi)[2]
             W = np.sum(F*e_z) / ko.m2
-            di_dt = r * np.cos(ko.periapse_angle + phi) * W / Omega / a**2 / np.sqrt(1-e**2)
+            di_dt = np.sqrt(np.sum(r*r)) * np.cos(ko.periapse_angle + phi) * W / Omega / a**2 / np.sqrt(1-e**2)
             return  di_dt / (1.+e*np.cos(phi))**2
         return -(1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
 
@@ -508,9 +512,9 @@ class GasDynamicalFriction(DissipativeForce):
         """
         ln_Lambda = self.ln_Lambda
         disk = self.disk or hs.halo
-        r = np.sqrt(np.sum(pos[:2]*pos[:2])) # r is the radius inside the disk
+        r, phi, z = kepler.KeplerOrbit.from_xy_plane_to_rhophi_plane(pos)
 
-        v_gas = disk.velocity(pos) #  TODO: Improve
+        v_gas = disk.velocity(r, phi, z=z) #  TODO: Improve
         v_rel = ( v - v_gas if opt.considerRelativeVelocities
                         else v )
         v_rel_tot = np.sqrt(np.sum(v_rel*v_rel))
@@ -530,7 +534,7 @@ class GasDynamicalFriction(DissipativeForce):
                 R_acc = 2.*ko.m2 /v_rel_tot**2
                 ln_Lambda =  7.15*H/R_acc
 
-        F_df = 4.*np.pi * ko.m2**2 * disk.density(r) * ln_Lambda / v_rel_tot**2
+        F_df = 4.*np.pi * ko.m2**2 * disk.density(r, z=z) * ln_Lambda / v_rel_tot**2
         #print(v, v_gas, v_rel, F_df)
         F_df = np.nan_to_num(F_df)
         return F_df* v_rel / v_rel_tot
@@ -690,8 +694,8 @@ class GasInteraction(DissipativeForceSS):
         Parameters:
             hs (HostSystem) : The host system object
             ko (KeplerOrbit): The Kepler orbit object describing the current orbit
-            r  (np.ndarray) : The position of the secondary in the XYZ fundamental plane
-            v  (np.ndarray) : The velocity vector of the secondary in the XYZ fundamental plane
+            r  (float)      : The radius of the secondary (as in total distance to the MBH)
+            v  (float)      : The total velocity
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
@@ -699,7 +703,6 @@ class GasInteraction(DissipativeForceSS):
                 The magnitude of the force through gas interactions
         """
         disk = self.disk or hs.halo
-        r = np.sqrt(np.sum(r*r))
         #v_gas = disk.velocity(r)
         #v_rel = ( self.get_relative_velocity(v, v_gas)[0] if opt.considerRelativeVelocities
         #                else self.get_relative_velocity(v, 0.)[0] )
@@ -812,125 +815,214 @@ class StellarDiffusion(StochasticForce):
         R_grid, V_grid = np.meshgrid(r_grid, v_grid)
 
         # The distribution function depends on the specific energy Eps
-        f = lambda v, r: self.stellarDistribution.f( np.max([- v**2 /2. + self.stellarDistribution.potential(r), 0.]))
+        f = lambda v, r: self.stellarDistribution.f( np.clip(- v**2 /2. + self.stellarDistribution.potential(r), 0., None)) / self.E_m_s
+        #f = lambda v, r: self.stellarDistribution.f( - v**2 /2. + self.stellarDistribution.potential(r))
 
         # Calculte E_1, F_2, and F_4 for interpolation
         E_1_int = np.zeros(np.shape(V_grid))
+        #E_1_int_alt = np.zeros(np.shape(V_grid))
         for i, r in enumerate(r_grid):
-            E_1_int[:,i] = quad( lambda v_int : v_int * f(v_int, r), 0, np.inf, limit=100)[0] * np.ones(np.shape(v_grid))
-        E_1 = LinearNDInterpolator( list(zip(R_grid.flatten(), V_grid.flatten())),
-                                             (E_1_int / V_grid).flatten(), rescale=True)
+            #E_1_int_alt[:,i] = np.array([quad(lambda v_int : v_int * f(v_int, r), v, np.sqrt(2.*self.stellarDistribution.potential(r)))[0] for v in v_grid])
+            #E_1_int_alt[:,i] = odeint( lambda a, v_int : -v_int *f(-v_int, r),  0, -v_grid[::-1], atol=acc)[:,0][::-1]
+            for j,v in enumerate(v_grid):
+                if v > np.sqrt(2.*self.stellarDistribution.potential(r)):
+                    continue
+                v_int_grid = np.linspace(v, np.sqrt(2.*self.stellarDistribution.potential(r)), 1000)
+                E_1_int[j,i] = simps(v_int_grid*f(v_int_grid, r), x=v_int_grid)
+        E_1_int /=  V_grid
+        #E_1_int_alt /= V_grid
+        E_1 = CloughTocher2DInterpolator( list(zip(np.log(R_grid).flatten(), np.log(V_grid).flatten())),
+                                             E_1_int.flatten())
 
         F_2_int = np.zeros(np.shape(V_grid))
+        #F_2_int_alt = np.zeros(np.shape(V_grid))
         for i, r in enumerate(r_grid):
-            F_2_int[:,i] = odeint( lambda a, v_int : v_int**2 * f(v_int, r), 0, v_grid )[:,0]
-        F_2 = LinearNDInterpolator(list(zip(R_grid.flatten(), V_grid.flatten())),
-                                    (F_2_int / V_grid**2).flatten() , rescale = True)
+            #F_2_int_alt[:,i] = np.array([quad(lambda v_int : v_int**2 * f(v_int, r), 0, v)[0] for v in v_grid])
+            #F_2_int_alt[:,i] = odeint( lambda a, v_int : v_int**2 * f(np.exp(v_int), r), 0., v_grid)[:,0]
+            for j,v in enumerate(v_grid):
+                v_int_grid = np.linspace(0, v, 1000)
+                F_2_int[j,i] = simps(v_int_grid**2 *f(v_int_grid, r), x=v_int_grid)
+        F_2_int /= V_grid**2
+        #F_2_int_alt /= V_grid**2
+        F_2 = CloughTocher2DInterpolator(list(zip(np.log(R_grid).flatten(), np.log(V_grid).flatten())),
+                                            F_2_int.flatten() )
 
         F_4_int = np.zeros(np.shape(V_grid))
+        #F_4_int_alt = np.zeros(np.shape(V_grid))
         for i, r in enumerate(r_grid):
-            F_4_int[:,i] = odeint( lambda a, v_int : v_int**4 * f(v_int, r), 0, v_grid )[:,0]
-        F_4 = LinearNDInterpolator(list(zip(R_grid.flatten(), V_grid.flatten())),
-                                   (F_4_int / V_grid**4).flatten() , rescale = True)
+            #F_4_int_alt[:,i] = np.array([quad(lambda v_int : v_int**4 * f(v_int, r), 0, v)[0] for v in v_grid])
+            #F_4_int_alt[:,i] = odeint( lambda a, v_int : v_int**4 * f(v_int, r), 0., v_grid, atol=acc)[:,0]
+            for j,v in enumerate(v_grid):
+                v_int_grid = np.linspace(0, v, 1000)
+                F_4_int[j,i] = simps(v_int_grid**4 *f(v_int_grid, r), x=v_int_grid)
+        F_4_int /= V_grid**4
+        #F_4_int_alt /= V_grid**4
+        F_4 = CloughTocher2DInterpolator(list(zip(np.log(R_grid).flatten(), np.log(V_grid).flatten())),
+                                            F_4_int.flatten() )
+        '''
+        plt.figure(figsize=(12,8))
+        n1_2 = int(len(r_grid)/2)
+        plt.loglog(v_grid, np.array([f(v, r_grid[0]) for v in v_grid]), label='f(r_0)')
+        plt.loglog(v_grid, np.array([f(v, r_grid[n1_2]) for v in v_grid]), label='f(r_1/2)')
+        plt.loglog(v_grid, np.array([f(v, r_grid[-1]) for v in v_grid]), label='f(r_1)')
 
-        print(R_grid, V_grid, E_1_int, F_2_int, F_4_int)
+        #plt.loglog(v_grid, F_2_int[:,0], label='F_2(r_0)', linestyle='-.')
+        #plt.loglog(v_grid, F_2_int[:,n1_2], label='F_2(r_1/2)', linestyle='-.')
+        #plt.loglog(v_grid, F_2_int[:,-1], label='F_2(r_1)', linestyle='-.')
+        #plt.loglog(v_grid, F_2_int_alt[:,0], label='F_2(r_0)', linestyle='--')
+        #plt.loglog(v_grid, F_2_int_alt[:,n1_2], label='F_2(r_1/2)', linestyle='--')
+        #plt.loglog(v_grid, F_2_int_alt[:,-1], label='F_2(r_1)', linestyle='--')
+
+        #plt.loglog(v_grid, F_4_int[:,0], label='F_4(r_0)', linestyle='-.')
+        #plt.loglog(v_grid, F_4_int[:,n1_2], label='F_4(r_1/2)', linestyle='-.')
+        #plt.loglog(v_grid, F_4_int[:,-1], label='F_4(r_1)', linestyle='-.')
+        #plt.loglog(v_grid, F_4_int_alt[:,0], label='F_4(r_0)', linestyle='--')
+        #plt.loglog(v_grid, F_4_int_alt[:,n1_2], label='F_4(r_1/2)', linestyle='--')
+        #plt.loglog(v_grid, F_4_int_alt[:,-1], label='F_4(r_1)', linestyle='--')
+
+        #plt.loglog(v_grid, E_1_int[:,0], label='E_1(r_0)', linestyle='-.')
+        #plt.loglog(v_grid, E_1_int[:,n1_2], label='E_1(r_1/2)', linestyle='-.')
+        #plt.loglog(v_grid, E_1_int[:,-1], label='E_1(r_1)', linestyle='-.')
+        #plt.loglog(v_grid, E_1_int_alt[:,0], label='E_1(r_0)', linestyle='--')
+        #plt.loglog(v_grid, E_1_int_alt[:,n1_2], label='E_1(r_1/2)', linestyle='--')
+        #plt.loglog(v_grid, E_1_int_alt[:,-1], label='E_1(r_1)', linestyle='--')
+        plt.legend(); plt.grid()
+        '''
 
         # Make lambda functions for the velocity diffusion coefficients
         E_v_par_pref =  -16.*np.pi**2 *(self.E_m_s2 + self.m * self.E_m_s ) * self.CoulombLogarithm
-        self.E_v_par = lambda r, v: E_v_par_pref * F_2(r, v)
+        self.E_v_par = lambda r, v: E_v_par_pref * F_2(np.log(r), np.log(v))
 
         E_v_par2_pref = 32./3.*np.pi**2 * self.E_m_s2 * self.CoulombLogarithm
-        self.E_v_par2 = lambda r, v: E_v_par2_pref * v * (F_4(r, v) + E_1(r, v))
+        self.E_v_par2 = lambda r, v: E_v_par2_pref * v * (F_4(np.log(r), np.log(v)) + E_1(np.log(r), np.log(v)))
 
         E_v_ort2_pref = E_v_par2_pref
-        self.E_v_ort2 = lambda r, v: E_v_ort2_pref * v * (3*F_2(r, v) - F_4(r, v) + 2*E_1(r, v))
+        self.E_v_ort2 = lambda r, v: E_v_ort2_pref * v * (3*F_2(np.log(r), np.log(v)) - F_4(np.log(r), np.log(v)) + 2*E_1(np.log(r), np.log(v)))
+
+        plt.figure(figsize=(12,8))
+
+        n1_2 = int(len(r_grid)/2)
+        plt.loglog(v_grid, np.abs(self.E_v_par(r_grid[n1_2], v_grid)), label='<$Delta v_\parallel>(r_1/2)$')
+        plt.loglog(v_grid, 4.*np.pi *(self.E_m_s + self.m ) * self.CoulombLogarithm* np.array([imripy.halo.MatterHaloDF.density(self.stellarDistribution, r_grid[n1_2], v_max=v)/v**2  for v in v_grid]),
+                    label='distr(r_1/2)', linestyle='--')
+        plt.loglog(v_grid, np.abs(self.E_v_par2(r_grid[n1_2], v_grid)), label='$<Delta v_\parallel^2>(r_1/2)$')
+        plt.loglog(v_grid, np.abs(self.E_v_ort2(r_grid[n1_2], v_grid)), label='$<Delta v_\perp^2>(r_1/2)$')
+        Clog_prime = self.CoulombLogarithm
+        sigma_f = np.sqrt(m1 / (1. + self.stellarDistribution.alpha) / r_grid[n1_2])
+        rho_f = self.stellarDistribution.density(r_grid[n1_2])
+        C = 8.* np.sqrt(2.*np.pi)/3. * self.E_m_s * rho_f / sigma_f * Clog_prime
+        plt.axhline(C, linestyle='--')
+
+        plt.loglog(v_grid, np.abs(self.E_v_par(r_grid[0], v_grid)), label='$<Delta v||>(r_0)$')
+        plt.loglog(v_grid, 4.*np.pi *(self.E_m_s + self.m ) * self.CoulombLogarithm* np.array([imripy.halo.MatterHaloDF.density(self.stellarDistribution, r_grid[0], v_max=v)/v**2  for v in v_grid]),
+                    label='distr(r_0)', linestyle='--')
+        plt.loglog(v_grid, np.abs(self.E_v_par2(r_grid[0], v_grid)), label='$<Delta v_\parallel^2>(r_0)$')
+        plt.loglog(v_grid, np.abs(self.E_v_ort2(r_grid[0], v_grid)), label='$<Delta v_\perp^2>(r_0)$')
+        Clog_prime = self.CoulombLogarithm
+        sigma_f = np.sqrt(m1 / (1. + self.stellarDistribution.alpha) / r_grid[0])
+        rho_f = self.stellarDistribution.density(r_grid[0])
+        C = 8.* np.sqrt(2.*np.pi)/3. * self.E_m_s * rho_f / sigma_f * Clog_prime
+        plt.axhline(C, linestyle='--')
+
+        plt.legend(); plt.grid()
 
 
 
-    def dE_dt(self, sp, a, e, opt):
+    def dE_dt(self, hs, ko, opt):
         """
         Calculates the average energy loss due to stellar diffusion.
         Eq (14) from https://arxiv.org/pdf/2304.13062.pdf
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : float
                 The energy loss due to stellar diffusion
         """
+        a = ko.a; e = ko.e
         def integrand(phi):
-            r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
-            deps = v * self.E_v_par(r, v) + self.E_v_par2(r, v) / 2. + self.E_v_ort2(r, v) / 2.
-            #print(v, deps, self.E_v_par(v), self.E_v_par2(v), self.E_v_ort2(v) )
+            r, v = ko.get_orbital_parameters(phi)
+            deps = v * self.E_v_par(r, v) + self.E_v_par2(r, v) / 2. + self.E_v_ort2(r, v) / 2. # the negative signs cancel out ?
             return deps / (1.+e*np.cos(phi))**2
-        #plt.plot(np.linspace(0, np.pi), np.array([integrand(phi) for phi in np.linspace(0, np.pi)]))
-        dE_dt = (1.-e**2)**(3./2.) * quad(integrand, 0., np.pi, limit=50)[0]
-        return - 2.* self.m * dE_dt
+        dE_dt = self.m * (1.-e**2)**(3./2.) /2./np.pi * quad(integrand, 0., 2.*np.pi, limit=100)[0] # the 1/T is in the 1/2pi
+        return - dE_dt
 
-    def dL_dt(self, sp, a, e, opt):
+    def dL_dt(self, hs, ko, opt):
         """
         Calculates the average angular momentum loss due to stellar diffusion.
         Eq (16) from https://arxiv.org/pdf/2304.13062.pdf
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : float
                 The angular momentum loss due to stellar diffusion
         """
-        J = np.sqrt(sp.m1**2 / sp.m_total() * a * (1.-e**2))
+        a = ko.a; e = ko.e
+        J = np.sqrt(ko.m1 * a * (1.-e**2))
         def integrand(phi):
-            r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
+            r, v = ko.get_orbital_parameters(phi)
             dJ = J / v * self.E_v_par(r, v) + r**2 / J / 4. * self.E_v_ort2(r, v)
             return dJ / (1.+e*np.cos(phi))**2
-        dL_dt = (1.-e**2)**(3./2.) * quad(integrand, 0., np.pi, limit=50)[0]
-        return -2.* self.m * dL_dt
+        dL_dt = self.m  * (1.-e**2)**(3./2.) /2./np.pi * quad(integrand, 0., 2.*np.pi, limit=100)[0]  # the 1/T is in the 1/2pi
+        #plt.plot(np.linspace(0., 2.*np.pi, 100), [integrand(p) for p in np.linspace(0., 2.*np.pi, 100)])
+        return - dL_dt
 
-    def dEdL_diffusion(self, sp, a, e, opt):
+    def dinclination_angle_dt(self, hs, ko, opt):
+        """
+        For now we assume the stellar distribution to be spherically symmetric, so there is no inclination change
+        """
+        return 0.
+
+    def dEdL_diffusion(self, hs, ko, opt):
         """
         Calculates the matrix for the diffusion term of the SDE due to stellar diffusion.
         The variances are on the diagonal according to Eq(15) and (17), the covariance is on the off-diagonal Eq(18)
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a  (float)      : The semimajor axis of the Keplerian orbit, or the radius of a circular orbit
-            e  (float)      : The eccentricity of the Keplerian orbit
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
             opt (EvolutionOptions): The options for the evolution of the differential equations
 
         Returns:
             out : np.matrix
                 The diffusion matrix
         """
-        J = np.sqrt(sp.m1**2 / sp.m_total() * a * (1.-e**2))
+        a = ko.a; e = ko.e
+        J = np.sqrt(ko.m1 * a * (1.-e**2))
+        T = 2.*np.pi * np.sqrt(a**3 / ko.m1)
 
-        covmatrix = np.zeros((2,2))
         def integrand_deps2(phi):
-            r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
+            r, v = ko.get_orbital_parameters(phi)
             deps2 = v**2 *  self.E_v_par2(r, v)
             return deps2 / (1.+e*np.cos(phi))**2
-        covmatrix[0,0] = quad(integrand_deps2, 0., np.pi, limit=60)[0]
+        D_EE = 2.* self.m**2 * (1.-e**2)**(3./2.)  /2./np.pi * quad(integrand_deps2, 0., np.pi, limit=60)[0] # The factor of 2 because we only integrate over half the orbit pi
 
         def integrand_dJ2(phi):
-            r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
+            r, v = ko.get_orbital_parameters(phi)
             dJ2 = J**2 / v**2 * self.E_v_par2(r, v) + 1./2. *( r**2 - J**2/v**2) * self.E_v_ort2(r, v)
             return dJ2 / (1.+e*np.cos(phi))**2
-        covmatrix[1,1] = quad(integrand_dJ2, 0., np.pi, limit=60)[0]
+        D_LL = 2.* self.m**2 * (1.-e**2)**(3./2.) /2./np.pi * quad(integrand_dJ2, 0., np.pi, limit=60)[0]
 
         def integrand_dJdeps(phi):
-            r, v, v_r, v_phi = self.get_orbital_elements(sp, a, e, phi, opt)
+            r, v = ko.get_orbital_parameters(phi)
             dJdeps = J *self.E_v_par2(r, v)
             return dJdeps / (1.+e*np.cos(phi))**2
-        covmatrix[0,1] = quad(integrand_dJdeps, 0., np.pi, limit=60)[0]
-        covmatrix[1,0] = covmatrix[0,1]
+        D_EL =  2.* self.m**2 * (1.-e**2)**(3./2.) /2./np.pi * quad(integrand_dJdeps, 0., np.pi, limit=60)[0]
 
-        return -2.* self.m * (1.-e**2)**(3./2.) * covmatrix
+        sigma = np.zeros((2,2))
+        sigma[0,0] =  np.sqrt(D_EE)
+        sigma[1,0] =  D_EL / np.sqrt(D_EE)
+        sigma[1,1] =  np.sqrt( D_LL - D_EL**2 / D_EE)
+
+        #print(rf"D_EE = {D_EE:.3e}, D_LL = {D_LL:.3e}, D_EL = {D_EL:.3e}, 2D={np.matmul(sigma, sigma.T)}")
+
+        return sigma
 
 

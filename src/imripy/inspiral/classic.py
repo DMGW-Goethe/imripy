@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.integrate import solve_ivp, quad
 
+from collections.abc import Sequence
 import time
 from imripy import constants as c, kepler, merger_system as ms
 from . import forces
@@ -43,7 +44,7 @@ class Classic:
         def __init__(self, accuracy=1e-10, verbose=1, elliptic=True, m2_change=False,
                                     dissipativeForces=None, gwEmissionLoss = True, dynamicalFrictionLoss = True,
                                     considerRelativeVelocities=False, progradeRotation = True,
-                                    periapsePrecession = False,
+                                    periapsePrecession = False, inclinationChange=False,
                                     **kwargs):
             self.accuracy = accuracy
             self.verbose = verbose
@@ -59,6 +60,7 @@ class Classic:
             self.considerRelativeVelocities = considerRelativeVelocities
             self.progradeRotation = progradeRotation
             self.periapsePrecession = periapsePrecession
+            self.inclinationChange = inclinationChange
             self.additionalParameters = kwargs
 
 
@@ -375,7 +377,7 @@ class Classic:
             t = t*t_scale
 
             # Unpack array
-            ko.a, ko.e, ko.m2, ko.periapse_angle = y
+            ko.a, ko.e, ko.m2, ko.periapse_angle, ko.inclination_angle = y
             ko.a *= a_scale; ko.m2 = ko.m2 * m_scale if opt.m2_change else ko.m2
 
             if opt.verbose > 1:
@@ -385,15 +387,17 @@ class Classic:
             de_dt = Classic.de_dt(hs, ko, dE_dt=dE_dt, opt=opt) if opt.elliptic else 0.
             dm2_dt = Classic.dm2_dt(hs, ko, opt) if opt.m2_change else 0.
             dperiapse_angle_dt = Classic.dperiapse_angle_dt(hs, ko, opt) if opt.periapsePrecession else 0.
+            dinclination_angle_dt = Classic.dinclination_angle_dt(hs, ko, opt) if opt.inclinationChange else 0.
 
             if opt.verbose > 1:
                 toc = time.perf_counter()
-                print(rf"Step: t={t : 0.1e}, a={ko.a : 0.1e}({ko.a/hs.r_isco : 0.1e} r_isco)({ko.a/a_fin:0.1e} a_fin), da/dt={da_dt : 0.1e} \\n"
-                          +  rf"\\t e={ko.e : 0.1e}, de/dt={ de_dt : 0.1e}, m2={ko.m2:0.1e}, dm2/dt={dm2_dt:0.1e}\\n"
+                print(rf"Step: t={t : 0.1e}, a={ko.a : 0.3e}({ko.a/hs.r_isco : 0.3e} r_isco)({ko.a/a_fin:0.3e} a_fin), da/dt={da_dt : 0.3e} \\n"
+                          +  rf"\\t e={ko.e : 0.3e}, de/dt={ de_dt : 0.3e}, m2={ko.m2:0.3e}, dm2/dt={dm2_dt:0.3e}\\n"
+                          +  rf"\\t periapse={ko.periapse_angle : 0.3e}, dpa/dt={ dperiapse_angle_dt : 0.3e}, inclination={ko.inclination_angle:0.3e}, dia/dt={dinclination_angle_dt:0.3e}\\n"
                            + rf"\\t elapsed real time: { toc-tic } s")
 
 
-            dy = np.array([da_dt/a_scale, de_dt, dm2_dt/m_scale, dperiapse_angle_dt])
+            dy = np.array([da_dt/a_scale, de_dt, dm2_dt/m_scale, dperiapse_angle_dt, dinclination_angle_dt])
             return dy * t_scale
 
         # Termination condition
@@ -404,7 +408,7 @@ class Classic:
         inside_BH.terminal = True
 
         # Initial conditions
-        y_0 = np.array([ko.a / a_scale, ko.e, ko.m2/m_scale, ko.periapse_angle])
+        y_0 = np.array([ko.a / a_scale, ko.e, ko.m2/m_scale, ko.periapse_angle, ko.inclination_angle])
 
         # Evolve
         tic = time.perf_counter()
@@ -419,7 +423,7 @@ class Classic:
                                             Int.y[0]*a_scale,
                                             Int.y[1] if opt.elliptic else np.zeros(np.shape(Int.y[0])),
                                             Int.y[3] if opt.periapsePrecession else ko.periapse_angle,
-                                            inclination_angle=ko.inclination_angle,
+                                            Int.y[4] if opt.inclinationChange else ko.inclination_angle,
                                             longitude_an=ko.longitude_an,
                                             msg=Int.message)
 
@@ -474,7 +478,7 @@ class Classic:
             msg : string
                 The message of the solve_ivp integration
         """
-        def __init__(self, hs, options, t, m2, a, e=0., periapse_angle=0., inclination_angle=0., longitude_an=0., msg=None):
+        def __init__(self, hs, options, t, m2, a, e=0., periapse_angle=0., inclination_angle=0., longitude_an=0., prograde=True, msg=None):
             self.hs = hs
             self.options = options
             self.msg=msg
@@ -485,29 +489,40 @@ class Classic:
             self.periapse_angle = periapse_angle
             self.inclination_angle = inclination_angle
             self.longitude_an = longitude_an
+            self.prograde = prograde
             if not options.elliptic:
                 self.R = a
 
-    def from_xy_plane_to_rhophi_plane(self, v):
-        raise NotImplementedError
+        def get_kepler_orbit(self, i):
+            return kepler.KeplerOrbit(self.hs,
+                                    self.m2[i] if isinstance(self.m2, (Sequence, np.ndarray)) else self.m2,
+                                    self.a[i],
+                                    self.e[i] if isinstance(self.e, (Sequence, np.ndarray)) else self.e,
+                                    self.periapse_angle[i] if isinstance(self.periapse_angle, (Sequence, np.ndarray)) else self.periapse_angle,
+                                    self.longitude_an[i] if isinstance(self.longitude_an, (Sequence, np.ndarray)) else self.longitude_an,
+                                    prograde=self.prograde)
 
-    def from_rhophi_plane_to_xy_plane(self, v):
-        raise NotImplementedError
 
-    def from_orbital_xy_plane_to_fundamental_xy_plane(self, x):
-        raise NotImplementedError
+        def from_xy_plane_to_rhophi_plane(self, v):
+            raise NotImplementedError
 
-    def from_fundamental_xy_plane_to_orbital_xy_plane(self, x):
-        raise NotImplementedError
+        def from_rhophi_plane_to_xy_plane(self, v):
+            raise NotImplementedError
 
-    def get_orbital_vectors_in_orbital_xy_plane(self, phi):
-        raise NotImplementedError
+        def from_orbital_xy_plane_to_fundamental_xy_plane(self, x):
+            raise NotImplementedError
 
-    def get_orbital_vectors_in_fundamental_xy_plane(self, phi):
-        raise NotImplementedError
+        def from_fundamental_xy_plane_to_orbital_xy_plane(self, x):
+            raise NotImplementedError
 
-    def get_orbital_vectors(self, phi):
-        raise NotImplementedError
+        def get_orbital_vectors_in_orbital_xy_plane(self, phi):
+            raise NotImplementedError
 
-    def get_orbital_parameters(self, phi):
-        raise NotImplementedError
+        def get_orbital_vectors_in_fundamental_xy_plane(self, phi):
+            raise NotImplementedError
+
+        def get_orbital_vectors(self, phi):
+            raise NotImplementedError
+
+        def get_orbital_parameters(self, phi):
+            raise NotImplementedError

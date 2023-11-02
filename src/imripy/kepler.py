@@ -241,6 +241,17 @@ class KeplerOrbit:
         return r, v
 
     @property
+    def T(self):
+        """
+        The orbital period T
+
+        Returns
+        -------
+            The orbital period of the Keplerian orbit (in pc)
+        """
+        return 2.*np.pi * np.sqrt(self.a**3 / self.m_tot)
+
+    @property
     def m_red(self):
         """
         The function returns the reduced mass of the binary system of m1 and m2

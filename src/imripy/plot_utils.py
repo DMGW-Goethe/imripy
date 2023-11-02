@@ -47,7 +47,7 @@ def plotEvolution(hs, ev, ax_a=None, ax_e=None, label="", ax_ae=None, ax_1mea=No
         l, = ax_pa.plot(ev.t/c.year_to_pc, ev.periapse_angle*3437.8, color=color, label=label, linestyle=linestyle) # 1 rad = 3437.8 arcmin
         color = l.get_c()
     if not ax_ia is None:
-        l, = ai_pa.plot(ev.t/c.year_to_pc, ev.inclination_angle*3437.8, color=color, label=label, linestyle=linestyle) # 1 rad = 3437.8 arcmin
+        l, = ax_ia.plot(ev.t/c.year_to_pc, ev.inclination_angle*3437.8, color=color, label=label, linestyle=linestyle) # 1 rad = 3437.8 arcmin
         color = l.get_c()
     if not ax_1mea is None:
         l, = ax_1mea.loglog(1. - ev.e, ev.a/hs.r_isco, color=color, label=label, linestyle=linestyle)

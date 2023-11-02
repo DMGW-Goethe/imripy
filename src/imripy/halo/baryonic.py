@@ -1,5 +1,5 @@
 from .halo import *
-import imripy.constants as c, imripy.kepler as kepler
+import imripy.constants as c
 
 from scipy.optimize import root_scalar, root
 
@@ -275,6 +275,8 @@ class BaryonicDisk(MatterHalo):
     def __init__(self):
         super().__init__()
 
+    def density(self, r, z=0.):
+        pass
 
     def surface_density(self, r):
         pass
@@ -288,7 +290,7 @@ class BaryonicDisk(MatterHalo):
     def soundspeed(self, r):
         pass
 
-    def velocity(self, r):
+    def velocity(self, r, phi, z=0.):
         pass
 
     def mass(self, r, **kwargs):
@@ -405,20 +407,22 @@ class AlphaDisk(BaryonicDisk):
                             1.5 * (self.f_edd/0.1 * 0.1 / self.eps) * self.M * np.ones(np.shape(r)),
                             0.)
 
-    def density(self, r):
+    def density(self, r, z=0.):
         """
         The density function of the disk
 
         Parameters:
-            r : float or array_like
-                The radius at which to evaluate the density
+            r : float
+                The radius inside the disk plane
+            z : float
+                The height above the disk
 
         Returns:
-            out : float or array_like (depending on r)
+            out : float
                 The density at the radius r
         """
         return np.where( r < self.r_max,
-                            self.surface_density(r) / 2. / self.scale_height(r),
+                            self.surface_density(r) / 2. / self.scale_height(r) * np.exp(-z**2 / self.scale_height(r)**2),
                             0.)
 
     def soundspeed(self, r):
@@ -439,20 +443,24 @@ class AlphaDisk(BaryonicDisk):
                             self.scale_height(r) * Omega,
                             0.)
 
-    def velocity(self, r):
+    def velocity(self, r, phi, z=0.):
         """
         The velocity of the particles in the disk
 
         Parameters:
-            r : float or array_like
-                The radius at which to evaluate the velocity
+            r : float
+                The cylindrical radius inside the disk
+            phi : float
+                The cylindrical angle inside the disk
+            z   : float
+                The height above the disk plane
 
         Returns:
             out : tuple
-                The velocity (v_r, v_phi) at the radius r
+                The velocity [v_X, v_Y, v_Z] in the fundamental plane
         """
         v_phi = np.sqrt(self.M/r)
-        return  (0., v_phi) if r < self.r_max else 0.
+        return  np.array([-v_phi*np.sin(phi) , v_phi*np.cos(phi), 0.])
 
 
     def mach_number(self, r):
@@ -552,20 +560,22 @@ class BetaDisk(BaryonicDisk):
                             1.5 * (self.f_edd/0.1 * 0.1 / self.eps) * self.M* np.ones(np.shape(r)),
                             0.)
 
-    def density(self, r):
+    def density(self, r, z=0.):
         """
         The density function of the disk
 
         Parameters:
-            r : float or array_like
-                The radius at which to evaluate the density
+            r : float
+                The radius inside the disk plane
+            z : float
+                The height above the disk
 
         Returns:
-            out : float or array_like (depending on r)
+            out : float
                 The density at the radius r
         """
         return np.where( r < self.r_max,
-                            self.surface_density(r) / 2. / self.scale_height(r),
+                            self.surface_density(r) / 2. / self.scale_height(r) * np.exp(-z**2 / self.scale_height(r)**2),
                             0.)
 
     def soundspeed(self, r):
@@ -586,20 +596,24 @@ class BetaDisk(BaryonicDisk):
                             self.scale_height(r) * Omega,
                             0.)
 
-    def velocity(self, r):
+    def velocity(self, r, phi, z=0.):
         """
         The velocity of the particles in the disk
 
         Parameters:
-            r : float or array_like
-                The radius at which to evaluate the velocity
+            r : float
+                The cylindrical radius inside the disk
+            phi : float
+                The cylindrical angle inside the disk
+            z   : float
+                The height above the disk plane
 
         Returns:
             out : tuple
-                The velocity (v_r, v_phi) at the radius r
+                The velocity [v_X, v_Y, v_Z] in the fundamental plane
         """
         v_phi = np.sqrt(self.M/r)
-        return  (0., v_phi) if r < self.r_max else 0.
+        return  np.array([-v_phi*np.sin(phi) , v_phi*np.cos(phi), 0.])
 
     def mach_number(self, r):
         """
@@ -780,16 +794,18 @@ class DerdzinskiMayerDisk(BaryonicDisk):
 
         return rho, Sigma, T_mid, c_s2
 
-    def density(self, r):
+    def density(self, r, z=0.):
         """
         The density function of the disk
 
         Parameters:
-            r : float or array_like
-                The radius at which to evaluate the density
+            r : float
+                The radius inside the disk plane
+            z : float
+                The height above the disk
 
         Returns:
-            out : float or array_like (depending on r)
+            out : float
                 The density at the radius r
         """
         if isinstance(r, (np.ndarray, collections.Sequence)):
@@ -800,7 +816,7 @@ class DerdzinskiMayerDisk(BaryonicDisk):
                 density[i] = rho
             return density
 
-        return self.solve_eq(r)[0]
+        return self.solve_eq(r)[0] * np.exp(-z**2 / self.scale_height(r)**2)
 
     def surface_density(self, r):
         """
@@ -897,21 +913,24 @@ class DerdzinskiMayerDisk(BaryonicDisk):
         h = Sigma/2./rho
         return h
 
-    def velocity(self, r):
+    def velocity(self, r, phi, z=0.):
         """
         The velocity of the particles in the disk
 
         Parameters:
-            r : float or array_like
-                The radius at which to evaluate the velocity
+            r : float
+                The cylindrical radius inside the disk
+            phi : float
+                The cylindrical angle inside the disk
+            z   : float
+                The height above the disk plane
 
         Returns:
             out : tuple
-                The velocity (v_r, v_phi) at the radius r
+                The velocity [v_X, v_Y, v_Z] in the fundamental plane
         """
-        p = kepler.KeplerOrbit.from_xy_plane_to_rhophi_plane(r)
-        v_phi = np.sqrt(self.M/p[0])
-        return  np.array([-v_phi*np.sin(p[1]) , v_phi*np.cos(p[1]), 0.])
+        v_phi = np.sqrt(self.M/r)
+        return  np.array([-v_phi*np.sin(phi) , v_phi*np.cos(phi), 0.])
 
     def optical_depth(self, r):
         """
@@ -954,9 +973,12 @@ class DerdzinskiMayerDisk(BaryonicDisk):
         res = np.array(res)
         rho = res[:,0]; Sigma = res[:,1]; T_mid = res[:,2]; c_s = np.sqrt(res[:,3]);
         interpHalo = InterpolatedHalo(r_grid, rho, name=str(self))
+        density_interp = interp1d(r_grid, rho, kind='linear', bounds_error=False, fill_value=(0.,0.))
+        scale_height_interp = interp1d(r_grid, Sigma/2./rho, kind='linear', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.density = lambda r, z : density_interp(r)*np.exp(-z**2/scale_height_interp(r)**2)
         interpHalo.surface_density = interp1d(r_grid, Sigma, kind='linear', bounds_error=False, fill_value=(0.,0.))
         interpHalo.mach_number = interp1d(r_grid, r_grid/Sigma * 2 * rho, kind='linear', bounds_error=False, fill_value=(0.,0.))
-        interpHalo.scale_height = interp1d(r_grid, Sigma/2./rho, kind='linear', bounds_error=False, fill_value=(0.,0.))
+        interpHalo.scale_height = scale_height_interp
         interpHalo.soundspeed = interp1d(r_grid, c_s, kind='linear', bounds_error=False, fill_value=(0.,0.))
         interpHalo.T_mid = interp1d(r_grid, T_mid, kind='linear', bounds_error=False, fill_value=(0.,0.))
         interpHalo.mass = interp1d(r_grid, BaryonicDisk.mass(interpHalo, r_grid), kind='linear', bounds_error=False, fill_value=(0.,0.))
