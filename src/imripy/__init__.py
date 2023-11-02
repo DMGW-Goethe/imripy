@@ -1,4 +1,5 @@
 from . import cosmo
+from . import kepler
 from . import halo
 from . import merger_system
 from . import inspiral

@@ -5,12 +5,12 @@ from scipy.special import jv
 import collections
 
 
-def h_2(sp, ev, dbg=False, acc=1e-13):
+def h_2(hs, ev, dbg=False, acc=1e-13):
     """
     This function calculates the gravitational waveform h_+,x according to eq (25) in https://arxiv.org/pdf/1408.3534.pdf
 
     Parameters:
-        sp (merger_system.SystemProp)   : The object describing the properties of the inspiralling system
+        hs (merger_system.HostSystem)   : The object describing the properties of the host system
         ev (inspiral.Classic.Evolution) : The evolution object that results from the inspiral modeling
         dbg (bool)      : A parameter returning intermediate variables
         acc    (float)  : An accuracy parameter that is passed to the integration function
@@ -35,7 +35,7 @@ def h_2(sp, ev, dbg=False, acc=1e-13):
             The amplitude of the waveform over time
     """
     # First, obtain mapping of gw frequency and time
-    omega_s = sp.omega_s(ev.R)
+    omega_s = hs.omega_s(ev.R)
     f_gw = omega_s / np.pi
     t_of_f = interp1d(f_gw, ev.t, kind='cubic', bounds_error=False, fill_value='extrapolate')
 
@@ -49,32 +49,32 @@ def h_2(sp, ev, dbg=False, acc=1e-13):
 
     # Calculate PhiTilde
     Phi = Phi - Phi[-1]
-    t_c= (ev.t[-1] + 5./256. * ev.R[-1]**4/sp.m_total()**2 / sp.m_reduced())
+    t_c= (ev.t[-1] + 5./256. * ev.R[-1]**4/ev.m_tot**2 / ev.m_red)
     tpt = 2.*np.pi*f_gw* (ev.t- t_c)
     PhiTild = tpt - Phi
 
     # Now compute the time-dependant amplitude A
-    A = 1./sp.D * 4. *sp.redshifted_m_reduced() * omega_s**2 * ev.R**2
+    A = 1./hs.D_l * 4. *ev.redshifted_m_red * omega_s**2 * ev.R**2
 
     # The phase of the GW signal is given by the steady state aproximation
-    Psi = 2.*np.pi*f_gw*sp.D + PhiTild - np.pi/4.
+    Psi = 2.*np.pi*f_gw*hs.D_l + PhiTild - np.pi/4.
 
     # This gives us h on the f grid (accounting for redshift)
-    h_plus =  1./2. *  A * np.sqrt(2*np.pi * (1+sp.z())**2 / domega_gw) * (1. + np.cos(sp.inclination_angle)**2)/2.
-    h_cross =  1./2. *  A * np.sqrt(2*np.pi * (1+sp.z())**2 / domega_gw) * np.cos(sp.inclination_angle)
+    h_plus =  1./2. *  A * np.sqrt(2*np.pi * (1+hs.z)**2 / domega_gw) * (1. + np.cos(ev.inclination_angle)**2)/2. # TODO: This is only in the fundamental frame
+    h_cross =  1./2. *  A * np.sqrt(2*np.pi * (1+hs.z)**2 / domega_gw) * np.cos(ev.inclination_angle)
 
     if dbg:
-        return f_gw/(1.+sp.z()), h_plus, h_cross, Psi, t_of_f, PhiTild, A
+        return f_gw/(1.+hs.z), h_plus, h_cross, Psi, t_of_f, PhiTild, A
 
-    return f_gw/(1.+sp.z()), h_plus, h_cross, Psi
+    return f_gw/(1.+hs.z), h_plus, h_cross, Psi
 
 
-def h_n(n, sp, ev, dbg=False, acc=1e-13):
+def h_n(n, hs, ev, dbg=False, acc=1e-13):
     """
     This function calculates the gravitational waveform h^n_+ for eccentric inspirals according to eq (101) in https://arxiv.org/pdf/2107.00741.pdf
     Parameters:
         n (int) : The harmonic of interest, must be a positive integer
-        sp (merger_system.SystemProp)   : The object describing the properties of the inspiralling system
+        hs (merger_system.HostSystem)   : The object describing the properties of the host system
         ev (inspiral.Classic.Evolution) : The evolution object that results from the inspiral modeling
         dbg (bool)      : A parameter returning intermediate variables
         acc    (float)  : An accuracy parameter that is passed to the integration function
@@ -97,26 +97,26 @@ def h_n(n, sp, ev, dbg=False, acc=1e-13):
     TODO:
         Check redshift, luminosity distance inclusion
     """
-    s_i = np.sin(sp.inclination_angle); c_i = np.cos(sp.inclination_angle)
+    s_i = np.sin(ev.inclination_angle); c_i = np.cos(ev.inclination_angle)
 
-    def C_n_plus(n, sp, e):
-        return  (  2.* s_i**2 * jv(n, n*e) +  2./e**2 * (1. + c_i**2) * np.cos(2.*sp.pericenter_angle)
+    def C_n_plus(n, periapse_angle, e):
+        return  (  2.* s_i**2 * jv(n, n*e) +  2./e**2 * (1. + c_i**2) * np.cos(2.*periapse_angle)
                               * ((e**2 - 2.)*jv(n, n*e) + n*e*(1.-e**2) * (jv(n-1, n*e) - jv(n+1, n*e))) )
 
-    def S_n_plus(n, sp, e):
-        return - ( 2./e**2 * np.sqrt(1. - e**2) * (1. + c_i**2) * np.sin(2.*sp.pericenter_angle)
+    def S_n_plus(n, periapse_angle, e):
+        return - ( 2./e**2 * np.sqrt(1. - e**2) * (1. + c_i**2) * np.sin(2.*periapse_angle)
                             * ( -2.*(1.-e**2)*n*jv(n, n*e) + e*(jv(n-1, n*e) - jv(n+1, n*e)) ) )
 
-    def C_n_cross(n, sp, e):
-        return - ( 4./e**2 * c_i*np.sin(2.*sp.pericenter_angle)
+    def C_n_cross(n, periapse_angle, e):
+        return - ( 4./e**2 * c_i*np.sin(2.*periapse_angle)
                           * ( (2. - e**2)*jv(n, n*e) +  n*e*(1.-e**2)*(jv(n-1, n*e) - jv(n+1, n*e)) ) )
 
-    def S_n_cross(n, sp, e):
-        return - ( 4./e**2 * np.sqrt(1. - e**2) * c_i * np.cos(2.*sp.pericenter_angle)
+    def S_n_cross(n, periapse_angle, e):
+        return - ( 4./e**2 * np.sqrt(1. - e**2) * c_i * np.cos(2.*periapse_angle)
                             * ( -2.*(1.-e**2)*n*jv(n, n*e) +  e*(jv(n-1, n*e) - jv(n+1, n*e)) ) )
 
     # Calculate the Keplerian orbital frequency and its derivative over time
-    F = np.sqrt(sp.m_total(ev.a)/ev.a**3) / 2./np.pi
+    F = np.sqrt(ev.m_tot/ev.a**3) / 2./np.pi
     F_dot = np.gradient(F, ev.t)
 
     # Calculate the mean anomaly of the orbit
@@ -124,7 +124,7 @@ def h_n(n, sp, ev, dbg=False, acc=1e-13):
     mean_anomaly = 2.*np.pi*  np.cumsum([quad(F_interp, ev.t[i-1], ev.t[i], epsabs=acc, epsrel=acc, limit=200)[0] if i > 0 else 0. for i in range(len(ev.t))])
 
     # calculate coalescense time left at the end of the a,e data
-    t_coal =  5./256. * ev.a[-1]**4/sp.m_total()**2 /sp.m_reduced()    # The circular case
+    t_coal =  5./256. * ev.a[-1]**4/ev.m_tot**2 / ev.m_red    # The circular case
     def g(e):
         return e**(12./19.)/(1. - e**2) * (1. + 121./304. * e**2)**(870./2299.)
     e = np.clip(ev.e, 1e-40, None) # Make sure to not divide by 0
@@ -136,15 +136,15 @@ def h_n(n, sp, ev, dbg=False, acc=1e-13):
     Psi_n = PhiTild_n - np.pi/4.   # TODO: Check inclusion of D term
 
     # Amplitude of the signal
-    A_n = - sp.redshifted_m_chirp()**(5./3.) / sp.D / 2. * (2.*np.pi * F/(1.+sp.z()))**(2./3.) / np.sqrt(n*F_dot/(1.+sp.z())**2) # TODO: Check redshift factors
+    A_n = - ev.redshifted_m_chirp**(5./3.) / hs.D_l / 2. * (2.*np.pi * F/(1.+hs.z))**(2./3.) / np.sqrt(n*F_dot/(1.+hs.z)**2) # TODO: Check redshift factors
     A_n = np.where(F_dot == 0., 0., A_n)
 
     # the actual waveform
-    h_n_plus  = A_n * ( C_n_plus(n, sp, e)   +  1.j  * S_n_plus(n, sp, e))
-    h_n_cross = A_n * ( C_n_cross(n, sp, e)  +  1.j  * S_n_cross(n, sp, e))
+    h_n_plus  = A_n * ( C_n_plus(n, ev.periapse_angle, e)   +  1.j  * S_n_plus(n, ev.periapse_angle, e))
+    h_n_cross = A_n * ( C_n_cross(n, ev.periapse_angle, e)  +  1.j  * S_n_cross(n, ev.periapse_angle, e))
 
     # the corresponding observed frequencies
-    f_gw = n*F / (1.+sp.z())
+    f_gw = n*F / (1.+hs.z)
 
     if dbg:
         return f_gw, h_n_plus, h_n_cross, Psi_n, PhiTild_n, A_n
@@ -152,11 +152,11 @@ def h_n(n, sp, ev, dbg=False, acc=1e-13):
     return f_gw, h_n_plus, h_n_cross, Psi_n
 
 
-def h(sp, ev, t_grid, phi_0=0., acc=1e-13):
+def h(hs, ev, t_grid, phi_0=0., acc=1e-13):
     """
     This function calculates the time domain gravitational waveform h_+,x(t) for eccentric inspirals according to eq (96) in https://arxiv.org/pdf/2107.00741.pdf
     Parameters:
-        sp (merger_system.SystemProp)   : The object describing the properties of the inspiralling system
+        hs (merger_system.HostSystem)   : The object describing the properties of the host system
         ev (inspiral.Classic.Evolution) : The evolution object that results from the inspiral modeling
         t_grid (array_like) : The times at which to evaluate h
         phi_0 (float)   : The initial phase of the orbit at t_grid[0]
@@ -175,31 +175,31 @@ def h(sp, ev, t_grid, phi_0=0., acc=1e-13):
         e_int = interp1d(ev.t, np.zeros(np.shape(ev.t)), bounds_error=False, fill_value=(0.,0.))
 
     def phi_dot(t, phi):  # The orbital phase evolution according to Maggiore (2007)
-        return np.sqrt(sp.m_total()/a_int(t)**3) * (1. - e_int(t)**2)**(-3./2.) * (1. + e_int(t)*np.cos(phi))**2
+        return np.sqrt(ev.m_tot/a_int(t)**3) * (1. - e_int(t)**2)**(-3./2.) * (1. + e_int(t)*np.cos(phi))**2
 
     sol = solve_ivp(phi_dot, [t_grid[0], t_grid[-1]], [phi_0], t_eval=t_grid, rtol=acc, atol=acc)  # calculate the orbital phase at the given time steps t_grid
     phi = sol.y[0]
     e = e_int(t_grid)
 
-    h_plus = - ( (2. * np.cos(2.*phi - 2.*sp.pericenter_angle) + 5.*e/2. * np.cos(phi - 2.*sp.pericenter_angle)
-                    + e/2. * np.cos(3.*phi - 2.*sp.pericenter_angle) + e**2 * np.cos(2.*sp.pericenter_angle) ) * (1. + np.cos(sp.inclination_angle)**2 )
-                + (e * np.cos(phi) + e**2 ) * np.sin(sp.inclination_angle)**2 )
-    h_plus *= sp.m_reduced()*sp.m_total() / (a_int(t_grid)*(1. - e**2)) / sp.D
+    h_plus = - ( (2. * np.cos(2.*phi - 2.*ev.periapse_angle) + 5.*e/2. * np.cos(phi - 2.*ev.periapse_angle)
+                    + e/2. * np.cos(3.*phi - 2.*ev.periapse_angle) + e**2 * np.cos(2.*ev.periapse_angle) ) * (1. + np.cos(ev.inclination_angle)**2 )
+                + (e * np.cos(phi) + e**2 ) * np.sin(ev.inclination_angle)**2 )
+    h_plus *= ev.m_red*ev.m_tot / (a_int(t_grid)*(1. - e**2)) / hs.D_l
 
-    h_cross = - (4. * np.sin(2.*phi - 2.*sp.pericenter_angle) + 5.*e * np.sin(phi - 2.*sp.pericenter_angle)
-                        + e * np.sin(3.*phi - 2.*sp.pericenter_angle) - 2.*e**2 * np.sin(2.*sp.pericenter_angle)) * np.cos(sp.inclination_angle)
-    h_cross *= sp.m_reduced()*sp.m_total() / (a_int(t_grid)*(1. - e**2)) / sp.D
+    h_cross = - (4. * np.sin(2.*phi - 2.*ev.periapse_angle) + 5.*e * np.sin(phi - 2.*ev.periapse_angle)
+                        + e * np.sin(3.*phi - 2.*ev.periapse_angle) - 2.*e**2 * np.sin(2.*ev.periapse_angle)) * np.cos(ev.inclination_angle)
+    h_cross *= ev.m_red*ev.m_tot / (a_int(t_grid)*(1. - e**2)) / hs.D_l
 
     return h_plus, h_cross
 
 
-def N_cycles_n(n, sp, ev, acc=1e-13):
+def N_cycles_n(n, hs, ev, acc=1e-13):
     """
     Calculates the amount of cycles of a given harmonic n left to observe for a given frequency as given by eq. (5.3) of https://arxiv.org/pdf/2002.12811.pdf with t_f = ev.t[-1]
 
     Parameters:
         n (int) : The harmonic of interest, must be a positive integer
-        sp (merger_system.SystemProp)   : The object describing the properties of the inspiralling system
+        hs (merger_system.HostSystem)   : The object describing the properties of the host system
         ev (inspiral.Classic.Evolution) : The evolution object that results from the inspiral modeling
         dbg (bool)      : A parameter returning intermediate variables
         acc    (float)  : An accuracy parameter that is passed to the integration function
@@ -210,21 +210,21 @@ def N_cycles_n(n, sp, ev, acc=1e-13):
         N_cycles : np.ndarray
             The number of cycles left to observe for that harmonic
     """
-    F = np.sqrt(sp.m_total(ev.a)/ev.a**3) / 2./np.pi
+    F = np.sqrt(ev.m_tot/ev.a**3) / 2./np.pi
     F_interp = interp1d(ev.t, F, kind='cubic', bounds_error=False, fill_value=(0.,0.))
     N = solve_ivp(lambda t,y: - n * F_interp(t), [ev.t[0], ev.t[-1]], [0.], t_eval= ev.t, rtol=acc, atol=acc).y[0]
     N -= N[-1]
     return n*F, N
 
 
-def BrakingIndex(sp, ev, acc=1e-13):
+def BrakingIndex(hs, ev, acc=1e-13):
     """
     Calculates the braking index as originally defined by the spindown of neutron stars (see eq (4) of https://arxiv.org/pdf/2209.10981.pdf)
         as f * f'' / (f')^2
         where ' denotes the temporal derivative
 
     Parameters:
-        sp (merger_system.SystemProp)   : The object describing the properties of the inspiralling system
+        hs (merger_system.HostSystem)   : The object describing the properties of the host system
         ev (inspiral.Classic.Evolution) : The evolution object that results from the inspiral modeling
         acc    (float)  : An accuracy parameter that is passed to the integration function
 
@@ -234,7 +234,7 @@ def BrakingIndex(sp, ev, acc=1e-13):
         n : np.ndarray
             The braking index
     """
-    F = np.sqrt(sp.m_total(ev.a)/ev.a**3) / 2./np.pi
+    F = np.sqrt(ev.m_tot/ev.a**3) / 2./np.pi
     dF = np.gradient(F, ev.t)
     ddF = np.gradient(dF, ev.t)
     return F, F*ddF/ dF**2

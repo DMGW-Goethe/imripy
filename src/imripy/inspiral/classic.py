@@ -2,7 +2,7 @@ import numpy as np
 from scipy.integrate import solve_ivp, quad
 
 import time
-import imripy.constants as c, imripy.merger_system as ms
+from imripy import constants as c, kepler, merger_system as ms
 from . import forces
 
 class Classic:
@@ -318,35 +318,6 @@ class Classic:
         return di_dt_tot
 
 
-    class EvolutionResults:
-        """
-        This class keeps track of the evolution of an inspiral.
-
-        Attributes:
-            hs : merger_system.HostSystem
-                The host system
-            opt : Classic.EvolutionOptions
-                The options used during the evolution
-            t : np.ndarray
-                The time steps of the evolution
-            a,R : np.ndarray
-                The corresponding values of the semimajor axis - if e=0, this is also called R
-            e  : float/np.ndarray
-                The corresponding values of the eccentricity, default is zero
-            m2 : float/np.ndarray
-                The corresponding values of the mass of the secondary object, if accretion is included
-            msg : string
-                The message of the solve_ivp integration
-        """
-        def __init__(self, hs, options, t, a, msg=None):
-            self.hs = hs
-            self.options = options
-            self.msg=msg
-            self.t = t
-            self.a = a
-            if not options.elliptic:
-                self.e = np.zeros(np.shape(t))
-                self.R = a
 
     def handle_args(hs, ko, a_fin, t_0, t_fin, opt):
         opt.elliptic = ko.e > 0.
@@ -365,10 +336,11 @@ class Classic:
         if a_fin == 0.:
             a_fin = hs.r_isco     # Stop evolution at r_isco
 
+        ko.prograde = opt.progradeRotation # Check?
         return hs, ko, a_fin, t_0, t_fin, opt
 
 
-    def Evolve_new(hs, ko, a_fin=0., t_0=0., t_fin=None, opt=EvolutionOptions()):
+    def Evolve(hs, ko, a_fin=0., t_0=0., t_fin=None, opt=EvolutionOptions()):
         """
         The function evolves the coupled differential equations of the semimajor axis and eccentricity of the Keplerian orbits of the inspiralling system
             by tracking orbital energy and angular momentum loss due  to gravitational wave radiation, dynamical friction and possibly accretion
@@ -441,12 +413,15 @@ class Classic:
         toc = time.perf_counter()
 
         # Collect results
-        t = Int.t*t_scale
-        a = Int.y[0]*a_scale;
-        ev = Classic.EvolutionResults(hs, opt, t, a, msg=Int.message)
-        ev.e = Int.y[1] if opt.elliptic else np.zeros(np.shape(ev.t))
-        ev.m2 = Int.y[2]*m_scale if opt.m2_change else ko.m2;
-        ev.periapse_angle = Int.y[3] if opt.periapsePrecession else ko.periapse_angle
+        ev = Classic.EvolutionResults( hs, opt,
+                                            Int.t*t_scale,
+                                            Int.y[2]*m_scale if opt.m2_change else ko.m2,
+                                            Int.y[0]*a_scale,
+                                            Int.y[1] if opt.elliptic else np.zeros(np.shape(Int.y[0])),
+                                            Int.y[3] if opt.periapsePrecession else ko.periapse_angle,
+                                            inclination_angle=ko.inclination_angle,
+                                            longitude_an=ko.longitude_an,
+                                            msg=Int.message)
 
         if opt.verbose > 0:
             print(Int.message)
@@ -454,7 +429,7 @@ class Classic:
 
         return ev
 
-    def Evolve(sp, a_0, e_0=0., a_fin=0., t_0=0., t_fin=None, opt=EvolutionOptions()):
+    def Evolve_old(sp, a_0, e_0=0., a_fin=0., t_0=0., t_fin=None, opt=EvolutionOptions()):
         """
         The function evolves the coupled differential equations of the semimajor axis and eccentricity of the Keplerian orbits of the inspiralling system
             by tracking orbital energy and angular momentum loss due  to gravitational wave radiation, dynamical friction and possibly accretion
@@ -473,8 +448,66 @@ class Classic:
                 An evolution object that contains the results
         """
         hs = ms.HostSystem(sp.m1, halo=sp.halo, D_l = sp.D, includeHaloInTotalMass=sp.includeHaloInTotalMass)
-        ko = ms.KeplerOrbit(hs, sp.m2, a_0, e=e_0, periapse_angle=sp.pericenter_angle, inclination_angle=sp.inclination_angle, prograde=opt.progradeRotation)
-        return Classic.Evolve_new(hs, ko, a_fin=a_fin, t_0=t_0, t_fin=t_fin, opt=opt)
+        ko = kepler.KeplerOrbit(hs, sp.m2, a_0, e=e_0, periapse_angle=sp.pericenter_angle, inclination_angle=sp.inclination_angle, prograde=opt.progradeRotation)
+        return Classic.Evolve(hs, ko, a_fin=a_fin, t_0=t_0, t_fin=t_fin, opt=opt)
 
 
+    class EvolutionResults(kepler.KeplerOrbit):
+        """
+        This class keeps track of the evolution of an inspiral.
+        This is basically a KeplerOrbit object but with arrays as values for the parameters
+        And additionally, the time, the inspiral options and msg
 
+        Attributes:
+            hs : merger_system.HostSystem
+                The host system
+            opt : Classic.EvolutionOptions
+                The options used during the evolution
+            t : np.ndarray
+                The time steps of the evolution
+            a,R : np.ndarray
+                The corresponding values of the semimajor axis - if e=0, this is also called R
+            e  : float/np.ndarray
+                The corresponding values of the eccentricity, default is zero
+            m2 : float/np.ndarray
+                The corresponding values of the mass of the secondary object, if accretion is included
+            msg : string
+                The message of the solve_ivp integration
+        """
+        def __init__(self, hs, options, t, m2, a, e=0., periapse_angle=0., inclination_angle=0., longitude_an=0., msg=None):
+            self.hs = hs
+            self.options = options
+            self.msg=msg
+            self.t = t
+            self.m2 = m2
+            self.a = a
+            self.e = e
+            self.periapse_angle = periapse_angle
+            self.inclination_angle = inclination_angle
+            self.longitude_an = longitude_an
+            if not options.elliptic:
+                self.R = a
+
+    def from_xy_plane_to_rhophi_plane(self, v):
+        raise NotImplementedError
+
+    def from_rhophi_plane_to_xy_plane(self, v):
+        raise NotImplementedError
+
+    def from_orbital_xy_plane_to_fundamental_xy_plane(self, x):
+        raise NotImplementedError
+
+    def from_fundamental_xy_plane_to_orbital_xy_plane(self, x):
+        raise NotImplementedError
+
+    def get_orbital_vectors_in_orbital_xy_plane(self, phi):
+        raise NotImplementedError
+
+    def get_orbital_vectors_in_fundamental_xy_plane(self, phi):
+        raise NotImplementedError
+
+    def get_orbital_vectors(self, phi):
+        raise NotImplementedError
+
+    def get_orbital_parameters(self, phi):
+        raise NotImplementedError

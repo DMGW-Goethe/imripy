@@ -1,5 +1,5 @@
 from .halo import *
-import imripy.constants as c
+import imripy.constants as c, imripy.kepler as kepler
 
 from scipy.optimize import root_scalar, root
 
@@ -909,8 +909,9 @@ class DerdzinskiMayerDisk(BaryonicDisk):
             out : tuple
                 The velocity (v_r, v_phi) at the radius r
         """
-        v_phi = np.sqrt(self.M/r)
-        return  (0., v_phi)
+        p = kepler.KeplerOrbit.from_xy_plane_to_rhophi_plane(r)
+        v_phi = np.sqrt(self.M/p[0])
+        return  np.array([-v_phi*np.sin(p[1]) , v_phi*np.cos(p[1]), 0.])
 
     def optical_depth(self, r):
         """
