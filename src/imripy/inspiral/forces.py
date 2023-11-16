@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.integrate import quad, quad_vec, odeint, simps
+from scipy.integrate import quad, quad_vec, odeint, simpson
 from scipy.interpolate import interp1d, LinearNDInterpolator, CloughTocher2DInterpolator
 import collections
 
@@ -398,6 +398,32 @@ class GWLoss(DissipativeForceSS):
         return -32./5. * ko.m_red**2 * ko.m_tot**(5./2.) / ko.a**(7./2.)  / (1. - ko.e**2)**2 * (1. + 7./8.*ko.e**2)
 
 
+class ParameterizedForce(DissipativeForceSS):
+    name = "ParameterizedForce"
+
+    def __init__(self, alpha, beta, F_0=1.):
+        self.alpha = alpha
+        self.beta = beta
+        self.F_0 = F_0
+
+    def F(self, hs, ko, r, v, opt):
+        """
+        This function is a general parametrization as F ~ r^alpha v^beta
+
+        Parameters:
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
+            r  (float)      : The radius of the secondary (as in total distance to the MBH)
+            v  (float)      : The total velocity
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+
+        Returns:
+            out : float
+                The magnitude of the dynamical friction force - antiparralel to the velocity
+        """
+        F = self.F_0 * r**self.alpha * v**self.beta
+        return F
+
 
 class DynamicalFriction(DissipativeForceSS):
     name = "DynamicalFriction"
@@ -449,7 +475,7 @@ class DynamicalFriction(DissipativeForceSS):
 
             v2_list = np.linspace(0., v_rel**2, 3000)
             f_list = halo.f(np.clip(halo.potential(r) - 0.5*v2_list, 0.,None))
-            alpha =  4.*np.pi*simps(v2_list * f_list, x=np.sqrt(v2_list)) / density # TODO: Change Normalization of f from density to 1?
+            alpha =  4.*np.pi*simpson(v2_list * f_list, x=np.sqrt(v2_list)) / density # TODO: Change Normalization of f from density to 1?
 
             while self.includeHigherVelocities:
                 v_esc = np.sqrt(2*halo.potential(r))
@@ -458,9 +484,9 @@ class DynamicalFriction(DissipativeForceSS):
                 v_list = np.linspace(v_rel+1e-7*v_rel, v_esc, 3000)
                 f_list = halo.f(np.clip(halo.potential(r) - 0.5*v_list**2, 0., None))
 
-                beta =  4.*np.pi*simps(v_list**2 * f_list * np.log((v_list + v_rel)/(v_list-v_rel)), x=v_list) / density
+                beta =  4.*np.pi*simpson(v_list**2 * f_list * np.log((v_list + v_rel)/(v_list-v_rel)), x=v_list) / density
                 beta = np.nan_to_num(beta) # in case v_list ~ v_rel
-                delta =  -8.*np.pi*v_rel*simps(v_list * f_list, x=v_list) / density
+                delta =  -8.*np.pi*v_rel*simpson(v_list * f_list, x=v_list) / density
                 break
             bracket = (alpha * ln_Lambda + beta + delta)
             #print(rf"r={r:.3e}({r/sp.r_isco():.3e} r_isco), v={v_rel:.3e}, alpha={alpha:.3e}, beta={beta:.3e}, delta={delta:.3e}, bracket={bracket:.3e}")
@@ -479,7 +505,7 @@ class DynamicalFriction(DissipativeForceSS):
 class GasDynamicalFriction(DissipativeForce):
     name = "GasDynamicalFriction"
 
-    def __init__(self, disk = None, ln_Lambda= -1., frictionModel='Ostriker'):
+    def __init__(self, disk = None, ln_Lambda= -1., relativisticCorrections = False, frictionModel='Ostriker'):
         """
         Constructor for the GasDynamicalFriction class
 
@@ -493,6 +519,7 @@ class GasDynamicalFriction(DissipativeForce):
             raise Exception(f"Gas dynamical friction model not recognized: {frictionModel}")
         self.frictionModel = frictionModel
         self.disk = disk
+        self.relativisticCorrections = relativisticCorrections
 
     def F(self, hs, ko, pos, v, opt):
         """
@@ -519,6 +546,9 @@ class GasDynamicalFriction(DissipativeForce):
                         else v )
         v_rel_tot = np.sqrt(np.sum(v_rel*v_rel))
         # print(v, v_gas, v_rel)
+        relCovFactor = 1.
+        if self.relativisticCorrections:
+            relCovFactor = (1. + v_rel_tot**2)**2 / (1. - v_rel_tot**2)
 
         if ln_Lambda < 0.:
             ln_Lambda = np.log(ko.m1/ko.m2)/2.
@@ -534,12 +564,58 @@ class GasDynamicalFriction(DissipativeForce):
                 R_acc = 2.*ko.m2 /v_rel_tot**2
                 ln_Lambda =  7.15*H/R_acc
 
-        F_df = 4.*np.pi * ko.m2**2 * disk.density(r, z=z) * ln_Lambda / v_rel_tot**2
+        F_df = 4.*np.pi * ko.m2**2 * relCovFactor * disk.density(r, z=z) * ln_Lambda / v_rel_tot**2
         #print(v, v_gas, v_rel, F_df)
         F_df = np.nan_to_num(F_df)
         return F_df* v_rel / v_rel_tot
 
 
+class GasGeometricDrag(DissipativeForce):
+    name = "GasDynamicalFriction"
+
+    def __init__(self, r_stellar, disk = None, C_drag= 1., relativisticCorrections = False):
+        """
+        Constructor for the GasDynamicalFriction class
+
+        """
+        self.r_stellar = r_stellar
+        self.disk = disk
+        self.C_drag = C_drag
+        self.relativisticCorrections = relativisticCorrections
+
+    def F(self, hs, ko, pos, v, opt):
+        """
+        The function gives the force of the dynamical friction of an object inside a gaseous disk at radius r
+            and with velocity v
+
+        Parameters:
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
+            pos  (np.ndarray) : The position of the secondary in the XYZ fundamental plane
+            v  (np.ndarray) : The velocity vector of the secondary in the XYZ fundamental plane
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+
+        Returns:
+            out : float
+                The magnitude of the dynamical friction force
+        """
+        disk = self.disk or hs.halo
+        r, phi, z = kepler.KeplerOrbit.from_xy_plane_to_rhophi_plane(pos)
+
+        v_gas = disk.velocity(r, phi, z=z) #  TODO: Improve
+        v_rel = ( v - v_gas if opt.considerRelativeVelocities
+                        else v )
+        v_rel_tot = np.sqrt(np.sum(v_rel*v_rel))
+
+        relCovFactor = 1.
+        if self.relativisticCorrections:
+            relCovFactor = (1. + v_rel_tot**2)**2 / (1. - v_rel_tot**2)
+
+
+        F_gd = self.C_drag / 2. * 4.*np.pi * self.r_stellar**2 * disk.density(r,z=z) * v_rel_tot**2
+        #print(v, v_gas, v_rel, F_df)
+        F_gd = np.nan_to_num(F_gd)
+        return F_gd* v_rel / v_rel_tot
 
 class AccretionLoss(DissipativeForceSS):
     name = "AccretionLoss"
@@ -810,7 +886,7 @@ class StellarDiffusion(StochasticForce):
         Eq (24)-(28) from https://arxiv.org/pdf/2304.13062.pdf
         """
 
-        r_grid = np.geomspace(2.*m1, 1e8*2*m1, 50)
+        r_grid = np.geomspace(2.*m1, 1e8*2*m1, 60)
         v_grid = np.geomspace( np.sqrt(2.* self.stellarDistribution.potential(r_grid[-1]))/1e4, np.sqrt(2.*self.stellarDistribution.potential(r_grid[0]))*1e4, 101)
         R_grid, V_grid = np.meshgrid(r_grid, v_grid)
 
@@ -828,7 +904,7 @@ class StellarDiffusion(StochasticForce):
                 if v > np.sqrt(2.*self.stellarDistribution.potential(r)):
                     continue
                 v_int_grid = np.linspace(v, np.sqrt(2.*self.stellarDistribution.potential(r)), 1000)
-                E_1_int[j,i] = simps(v_int_grid*f(v_int_grid, r), x=v_int_grid)
+                E_1_int[j,i] = simpson(v_int_grid*f(v_int_grid, r), x=v_int_grid)
         E_1_int /=  V_grid
         #E_1_int_alt /= V_grid
         E_1 = CloughTocher2DInterpolator( list(zip(np.log(R_grid).flatten(), np.log(V_grid).flatten())),
@@ -841,7 +917,7 @@ class StellarDiffusion(StochasticForce):
             #F_2_int_alt[:,i] = odeint( lambda a, v_int : v_int**2 * f(np.exp(v_int), r), 0., v_grid)[:,0]
             for j,v in enumerate(v_grid):
                 v_int_grid = np.linspace(0, v, 1000)
-                F_2_int[j,i] = simps(v_int_grid**2 *f(v_int_grid, r), x=v_int_grid)
+                F_2_int[j,i] = simpson(v_int_grid**2 *f(v_int_grid, r), x=v_int_grid)
         F_2_int /= V_grid**2
         #F_2_int_alt /= V_grid**2
         F_2 = CloughTocher2DInterpolator(list(zip(np.log(R_grid).flatten(), np.log(V_grid).flatten())),
@@ -854,7 +930,7 @@ class StellarDiffusion(StochasticForce):
             #F_4_int_alt[:,i] = odeint( lambda a, v_int : v_int**4 * f(v_int, r), 0., v_grid, atol=acc)[:,0]
             for j,v in enumerate(v_grid):
                 v_int_grid = np.linspace(0, v, 1000)
-                F_4_int[j,i] = simps(v_int_grid**4 *f(v_int_grid, r), x=v_int_grid)
+                F_4_int[j,i] = simpson(v_int_grid**4 *f(v_int_grid, r), x=v_int_grid)
         F_4_int /= V_grid**4
         #F_4_int_alt /= V_grid**4
         F_4 = CloughTocher2DInterpolator(list(zip(np.log(R_grid).flatten(), np.log(V_grid).flatten())),
