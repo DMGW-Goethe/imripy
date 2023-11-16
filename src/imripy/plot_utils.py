@@ -44,10 +44,13 @@ def plotEvolution(hs, ev, ax_a=None, ax_e=None, label="", ax_ae=None, ax_1mea=No
         l, = ax_ae.plot(ev.a/hs.r_isco, ev.e, color=color, label=label, linestyle=linestyle)
         color = l.get_c()
     if not ax_pa is None:
-        l, = ax_pa.plot(ev.t/c.year_to_pc, ev.periapse_angle*3437.8, color=color, label=label, linestyle=linestyle) # 1 rad = 3437.8 arcmin
+        l, = ax_pa.plot(ev.t[np.where(ev.e > 0)]/c.year_to_pc, ev.periapse_angle[np.where(ev.e)]*c.rad_to_arcmin, color=color, label=label, linestyle=linestyle)
+        if np.any(ev.e == 0.):
+            first = np.where(ev.e == 0.)[0][0]
+            ax_pa.plot(ev.t[first]/c.year_to_pc, ev.periapse_angle[first]*c.rad_to_arcmin, marker='o', color=color)
         color = l.get_c()
     if not ax_ia is None:
-        l, = ax_ia.plot(ev.t/c.year_to_pc, ev.inclination_angle*3437.8, color=color, label=label, linestyle=linestyle) # 1 rad = 3437.8 arcmin
+        l, = ax_ia.plot(ev.t/c.year_to_pc, ev.inclination_angle*c.rad_to_arcmin, color=color, label=label, linestyle=linestyle)
         color = l.get_c()
     if not ax_1mea is None:
         l, = ax_1mea.loglog(1. - ev.e, ev.a/hs.r_isco, color=color, label=label, linestyle=linestyle)
@@ -120,6 +123,7 @@ def plotDeltaN(hs, ev_0, ev_1, ax_dN, ax_di=None, n=2, acc=1e-13, plotFgw5year=F
         stop = stop[0] if len(stop) > 0 else len(ddN_df)
         if 'color' in kwargs:
             del kwargs['color']
+        # print(f_gw1, N_1, dN, ddN_df, ddN_df/dN * f_gw1)
         ax_di.plot(f_gw1[:stop]/c.hz_to_invpc, (ddN_df/dN * f_gw1)[:stop], color=l.get_c(), **kwargs)
 
     return f_gw1, dN

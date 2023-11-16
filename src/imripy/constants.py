@@ -23,4 +23,5 @@ g_cm3_to_invpc2 = 7.072e8
 g_cm2_to_invpc = 7.426e-27 / m_to_pc
 # Giga electron volt / cubic centimeter (density) to 1/pc^2
 GeV_cm3_to_invpc2 = 1.783e-24 * g_cm3_to_invpc2
-
+# rad to arcmin
+rad_to_arcmin = 3437.8
