@@ -1,7 +1,9 @@
 import numpy as np
 from scipy.integrate import solve_ivp, quad
+from scipy.interpolate import interp1d
 
 from collections.abc import Sequence
+import copy
 import time
 from imripy import constants as c, kepler, merger_system as ms
 from . import forces
@@ -37,14 +39,18 @@ class Classic:
                 Wether to orbit prograde or retrograde wrt to some other orbiting object - so far only relevant for accretion disk models
             periapsePrecession : bool
                 Wether to include precession of the periapse due to relativistic precession and mass precession
+            inclinationChange : bool
+                Wether to include change of the inclination angle due to the dissipative forces
+            additionalEvents : list of events passed to scipy.solve_ivp
+                Can include additional (terminal) events
             **kwargs : additional parameter
                 Will be saved in opt.additionalParameters and will be available throughout the integration
-
         """
         def __init__(self, accuracy=1e-10, verbose=1, elliptic=True, m2_change=False,
                                     dissipativeForces=None, gwEmissionLoss = True, dynamicalFrictionLoss = True,
                                     considerRelativeVelocities=False, progradeRotation = True,
                                     periapsePrecession = False, inclinationChange=False,
+                                    additionalEvents = None,
                                     **kwargs):
             self.accuracy = accuracy
             self.verbose = verbose
@@ -61,7 +67,10 @@ class Classic:
             self.progradeRotation = progradeRotation
             self.periapsePrecession = periapsePrecession
             self.inclinationChange = inclinationChange
+            self.additionalEvents = additionalEvents
             self.additionalParameters = kwargs
+            if len(kwargs.items()) > 0:
+                print("Unrecognized parameters added to additionalParameters: ", kwargs)
 
 
         def __str__(self):
@@ -291,7 +300,7 @@ class Classic:
         a = ko.a; e = ko.e
         T = 2.*np.pi * np.sqrt(a**3/ko.m_tot)
         # relativistic precession
-        dperiapse_angle_dt_rp = 6.*np.pi * ko.m_tot / a / (1-e**2) / T
+        dperiapse_angle_dt_rp = 6.*np.pi * ko.m_tot / a / (1.-e**2) / T
 
         # mass precession
         def integrand(phi):
@@ -338,6 +347,7 @@ class Classic:
         if a_fin == 0.:
             a_fin = hs.r_isco     # Stop evolution at r_isco
 
+        ko = copy.deepcopy(ko) # to avoid changing the passed object
         ko.prograde = opt.progradeRotation # Check?
         return hs, ko, a_fin, t_0, t_fin, opt
 
@@ -407,12 +417,17 @@ class Classic:
         inside_BH = lambda t,y, *args: y[0]*a_scale * (1. - y[1]) - 8*hs.m1  # for a(1-e) < 8m_1
         inside_BH.terminal = True
 
+        events = [fin_reached, inside_BH]
+        if not opt.additionalEvents is None:
+            for ev in opt.additionalEvents:
+                events.append(ev)
+
         # Initial conditions
         y_0 = np.array([ko.a / a_scale, ko.e, ko.m2/m_scale, ko.periapse_angle, ko.inclination_angle])
 
         # Evolve
         tic = time.perf_counter()
-        Int = solve_ivp(dy_dt, [t_0/t_scale, (t_0+t_fin)/t_scale], y_0, dense_output=True, args=(hs,opt), events=[fin_reached, inside_BH], max_step=t_step_max/t_scale,
+        Int = solve_ivp(dy_dt, [t_0/t_scale, (t_0+t_fin)/t_scale], y_0, dense_output=True, args=(hs,opt), events=events, max_step=t_step_max/t_scale,
                                                                                         method = 'RK45', atol=opt.accuracy, rtol=opt.accuracy)
         toc = time.perf_counter()
 
@@ -429,7 +444,7 @@ class Classic:
 
         if opt.verbose > 0:
             print(Int.message)
-            print(f" -> Evolution took {toc-tic:.4f}s")
+            print(f" -> Ended at {ev.a[-1]/hs.r_isco:.3e}r_isco. Evolution took {toc-tic:.4f}s real time")
 
         return ev
 
@@ -478,28 +493,46 @@ class Classic:
             msg : string
                 The message of the solve_ivp integration
         """
-        def __init__(self, hs, options, t, m2, a, e=0., periapse_angle=0., inclination_angle=0., longitude_an=0., prograde=True, msg=None):
+        def __init__(self, hs, options, t, m2, a, e=0., periapse_angle=0., inclination_angle=0., longitude_an=0., prograde=True, msg=None, interpolate=True):
             self.hs = hs
             self.options = options
             self.msg=msg
             self.t = t
             self.m2 = m2
             self.a = a
-            self.e = e
+            self.e = np.clip(e, 0, None)
             self.periapse_angle = periapse_angle
             self.inclination_angle = inclination_angle
             self.longitude_an = longitude_an
             self.prograde = prograde
+            self.interpolate = interpolate
             if not options.elliptic:
                 self.R = a
+            if interpolate:
+                issequence = lambda x : isinstance(x, (Sequence, np.ndarray))
+                self.m2_int = interp1d(self.t, self.m2 if issequence(self.m2) else self.m2*np.ones(np.shape(self.t)), bounds_error=True)
+                self.a_int = interp1d(self.t, self.a, bounds_error=True)
+                self.e_int = interp1d(self.t, self.e if issequence(self.e) else self.e*np.ones(np.shape(self.t)), bounds_error=True)
+                self.periapse_angle_int = interp1d(self.t, self.periapse_angle if issequence(self.periapse_angle) else self.periapse_angle*np.ones(np.shape(self.t)), bounds_error=True)
+                self.inclination_angle_int = interp1d(self.t, self.inclination_angle if issequence(self.inclination_angle) else self.inclination_angle*np.ones(np.shape(self.t)), bounds_error=True)
+                self.longitude_an_int = interp1d(self.t, self.longitude_an if issequence(self.longitude_an) else self.longitude_an*np.ones(np.shape(self.t)), bounds_error=True)
 
-        def get_kepler_orbit(self, i):
-            return kepler.KeplerOrbit(self.hs,
+        def get_kepler_orbit(self, i, interpolate=False):
+            if not interpolate:
+                return kepler.KeplerOrbit(self.hs,
                                     self.m2[i] if isinstance(self.m2, (Sequence, np.ndarray)) else self.m2,
                                     self.a[i],
                                     self.e[i] if isinstance(self.e, (Sequence, np.ndarray)) else self.e,
                                     self.periapse_angle[i] if isinstance(self.periapse_angle, (Sequence, np.ndarray)) else self.periapse_angle,
                                     self.longitude_an[i] if isinstance(self.longitude_an, (Sequence, np.ndarray)) else self.longitude_an,
+                                    prograde=self.prograde)
+            else:
+                return kepler.KeplerOrbit(self.hs,
+                                    self.m2_int(i),
+                                    self.a_int(i),
+                                    self.e_int(i),
+                                    self.periapse_angle_int(i),
+                                    self.longitude_an_int(i),
                                     prograde=self.prograde)
 
 
