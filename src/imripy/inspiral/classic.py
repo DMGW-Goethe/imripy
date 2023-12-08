@@ -538,6 +538,48 @@ class Classic:
                                     self.longitude_an_int(i),
                                     prograde=self.prograde)
 
+        def save(self, filename):
+            """
+            Save the result of the ODE evolution. This allows loading at later time without recomputing.
+            Note: HostSystem and EvolutionOptions are not yet serialized, so are not saved. These have to be recomputed at loading
+
+            TODO: Possibly serialize HostSystem
+
+            Parameters
+            --------
+                filename :  string
+                    The filename to be saved to. If it exists, results will be appended,
+                      as practiced by np.savez
+            """
+            np.savez(filename, t=self.t, m2=self.m2, a=self.a, e=self.e, pa=self.periapse_angle, ia=self.inclination_angle, la=self.longitude_an)
+
+        @classmethod
+        def load(self, filename, hs, options):
+            """
+            Load the result of the ODE evolution.
+            Note: HostSystem and EvolutionOptions are not yet serialized, so are not saved. These have to be recomputed at loading
+
+            Parameters
+            --------
+                filename :  string
+                    The filename to load from
+                hs : HostSystem
+                    The HostSystem object describing the host system
+                options : EvolutionOptions
+                    The EvolutionOptions object used for the evolution
+
+            Returns
+            -------
+                out : EvolutionResults
+                    The loaded EvolutionResults object
+            """
+            npz = np.load(filename)
+            num_or_array = lambda x: x if x.size>1 else x.item()
+            return Classic.EvolutionResults(hs, options, npz['t'], num_or_array(npz['m2']),
+                                                        npz['a'], num_or_array(npz['e']),
+                                                        num_or_array(npz['pa']),
+                                                        num_or_array(npz['ia']),
+                                                        num_or_array(npz['la']))
 
         def from_xy_plane_to_rhophi_plane(self, v):
             raise NotImplementedError
