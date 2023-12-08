@@ -47,7 +47,7 @@ def plotEvolution(hs, ev, ax_a=None, ax_e=None, label="", ax_ae=None, ax_1mea=No
         l, = ax_pa.plot(ev.t[np.where(ev.e > 0)]/c.year_to_pc, ev.periapse_angle[np.where(ev.e)]*c.rad_to_arcmin, color=color, label=label, linestyle=linestyle)
         if np.any(ev.e == 0.):
             first = np.where(ev.e == 0.)[0][0]
-            ax_pa.plot(ev.t[first]/c.year_to_pc, ev.periapse_angle[first]*c.rad_to_arcmin, marker='o', color=color)
+            ax_pa.plot(ev.t[first]/c.year_to_pc, ev.periapse_angle[first]*c.rad_to_arcmin, marker='o', markerfacecolor=color)
         color = l.get_c()
     if not ax_ia is None:
         l, = ax_ia.plot(ev.t/c.year_to_pc, ev.inclination_angle*c.rad_to_arcmin, color=color, label=label, linestyle=linestyle)
@@ -82,7 +82,37 @@ def plotGWcharacteristicStrain(hs, ev, ax_h, label="", acc=1e-13, harmonics=[2],
     for n in harmonics:
         wf = waveform.h_n(n, hs, ev, acc=acc)
         l, = ax_h.loglog(wf[0]/c.hz_to_invpc, 2.*wf[0]*np.abs(wf[1]), linestyle=next(linecycler),
-                                 label=label, color=col, **kwargs)
+                                 label=label.format(n) if "{0}" in label else label, color=col, **kwargs)
+
+
+def plotLastTyears(hs, ev, ax, t=5.*c.year_to_pc, n=2, marker=None, y=None, **kwargs):
+    """
+    Plots a line or a marker at the last t years to inspiral
+
+    Parameters:
+        hs (merger_system.HostSystem)   : The object describing the properties of the host system
+        ev (inspiral.Classic.Evolution) : The evolution object that results from the inspiral modeling
+        ax (plt.axes)                   : The axes object to plot on
+        n  (int)                        : Which harmonic to take the frequency of
+        t  (float)                      : The time in code units (pc)
+        marker (plt.marker)             : The marker style for matplotlib, e.g. 'o', or 'p'
+        y (function)                    : The function that gives the y value to plot the marker at
+        **kwargs                        : Other parameters that can be passed to the plotting, i.e. label, color, linestyle
+
+    Returns:
+        f_t : float
+            The corresponding frequency
+    """
+    f = n * np.sqrt(ev.m_tot/ev.a**3) / 2./np.pi
+    t_to_f = interp1d(ev.t, f, kind='cubic', bounds_error=False, fill_value=(0.,0.))
+    f_t = t_to_f(ev.t[-1] - t)
+    if f_t == 0.:
+        return None, f_t
+    if marker is None:
+        l = ax.axvline(f_t/c.hz_to_invpc, linestyle='--', **kwargs)
+    else:
+        l, = ax.plot(f_t/c.hz_to_invpc, y(f_t), marker=marker, **kwargs)
+    return l, f_t
 
 
 def plotDeltaN(hs, ev_0, ev_1, ax_dN, ax_di=None, n=2, acc=1e-13, plotFgw5year=False, min_dN=10., **kwargs):
@@ -96,7 +126,7 @@ def plotDeltaN(hs, ev_0, ev_1, ax_dN, ax_di=None, n=2, acc=1e-13, plotFgw5year=F
         ax_dN (plt.axes)                  : The axes on which to plot the difference in cycles left to observe
         ax_di (plt.axes)    (optional)    : The axes on which to plot the dephasing index
         n (int)             (optional)    : The harmonic to be plotted
-        plotFgw5year (bool) (optional)    : Whether to plot the line that represents 5 years to merger in vacuum case
+        plotFgw5year (bool) (optional)    : Whether to plot the marker that represents 5 years to merger
         min_dN (float)      (optional)    : The minimum dephasing amount for which to plot the dephasing index
         **kwargs                          : Other parameters that can be passed to the plotting, i.e. label, color, linestyle
 
@@ -114,8 +144,7 @@ def plotDeltaN(hs, ev_0, ev_1, ax_dN, ax_di=None, n=2, acc=1e-13, plotFgw5year=F
     l, = ax_dN.loglog(f_gw1/c.hz_to_invpc, np.abs(dN), **kwargs)
 
     if plotFgw5year:
-        f_gw5yr = interp1d(ev_1.t, f_gw1, kind='cubic', bounds_error=True)(ev_1.t[-1] - 5.*c.year_to_pc)
-        ax_dN.axvline(f_gw5yr/c.hz_to_invpc, linestyle='--', color=l.get_c())
+        l, f5yrs = plotLastTyears(hs, ev_1, ax_dN, t=5.*c.year_to_pc, n=n, marker='p', y=interp1d(f_gw1, np.abs(dN)), color=l.get_c())
 
     if not ax_di is None:
         ddN_df = np.gradient(dN, f_gw1)

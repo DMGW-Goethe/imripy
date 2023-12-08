@@ -319,7 +319,7 @@ class BaryonicDisk(MatterHalo):
         """
         Omega = np.sqrt(self.M/r**3)
         #return self.soundspeed(r) * Omega / np.pi / self.surface_density(r)
-        return  Omega**2 / 2. / np.pi / self.density(r)
+        return  Omega**2 / 2. / np.pi / self.density(r, z=0.)
 
     def __str__(self):
         """

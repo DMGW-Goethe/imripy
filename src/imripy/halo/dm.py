@@ -130,6 +130,7 @@ class Spike(MatterHaloDF):
         self.alpha= alpha
         self.r_spike = r_spike
         self.M_bh = M_bh
+        self.r_min = 4*M_bh
 
     def density(self, r):
         """
@@ -236,6 +237,26 @@ class Spike(MatterHaloDF):
         r_spike = (k*M_bh/rho_spike)**(1./3.)
         return Spike(rho_spike, r_spike, alpha, M_bh=M_bh)
 
+    def potentialEnergy(self, r):
+        """
+        Gives the potential (binding) energy of the spike as given in Eq(2.8) in https://arxiv.org/pdf/2002.12811.pdf
+
+        Note that U_in is zero as mass(r_in) = 0
+
+        Parameters:
+            r : float or array_like
+                radii of interest
+
+        Returns:
+            U : float or array_like
+                The binding energy
+        """
+        def spikeMass(r):
+            return 4*np.pi*self.rho_spike*self.r_spike**self.alpha * r**(3.-self.alpha) / (3.-self.alpha)
+        U_in = - ( spikeMass(self.r_min) * (3. - self.alpha) / self.r_min / (2.-self.alpha)
+                        * (self.M_bh - spikeMass(self.r_min)*(3.-self.alpha)/(5.-2.*self.alpha) ) )
+        return - ( spikeMass(r) * (3.-self.alpha) / r
+                 * ( (self.M_bh - spikeMass(self.r_min))/(2.-self.alpha) + spikeMass(r)/(5.-2.*self.alpha)) ) + U_in
 
     def __str__(self):
         """

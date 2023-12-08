@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.interpolate import UnivariateSpline, interp1d
-from scipy.integrate import quad, solve_ivp
+from scipy.integrate import quad, solve_ivp, cumulative_trapezoid
 from scipy.special import jv
 import collections
 
@@ -127,8 +127,8 @@ def h_n(n, hs, ev, dbg=False, acc=1e-13):
     t_coal =  5./256. * ev.a[-1]**4/ev.m_tot**2 / ev.m_red    # The circular case
     def g(e):
         return e**(12./19.)/(1. - e**2) * (1. + 121./304. * e**2)**(870./2299.)
-    e = np.clip(ev.e, 1e-40, None) # Make sure to not divide by 0
-    t_coal = t_coal * 48./19. / g(e[-1])**4 * quad(lambda e: g(e)**4 *(1-e**2)**(5./2.) /e/(1. + 121./304. * e**2), 0., e[-1], limit=100)[0]   # The eccentric inspiral time according to Maggiore (2007)
+    if ev.e[-1] > 0.:
+        t_coal = t_coal * 48./19. / g(ev.e[-1])**4 * quad(lambda e: g(e)**4 *(1-e**2)**(5./2.) /e/(1. + 121./304. * e**2), 0., ev.e[-1], limit=100)[0]   # The eccentric inspiral time according to Maggiore (2007)
     t_coal = ev.t[-1] + t_coal
 
     # Now we can calculate the phase of the stationary phase approximation
@@ -140,6 +140,7 @@ def h_n(n, hs, ev, dbg=False, acc=1e-13):
     A_n = np.where(F_dot == 0., 0., A_n)
 
     # the actual waveform
+    e = np.clip(ev.e, 1e-10, None) # in case eccentricity vanishes
     h_n_plus  = A_n * ( C_n_plus(n, ev.periapse_angle, e)   +  1.j  * S_n_plus(n, ev.periapse_angle, e))
     h_n_cross = A_n * ( C_n_cross(n, ev.periapse_angle, e)  +  1.j  * S_n_cross(n, ev.periapse_angle, e))
 
@@ -211,9 +212,8 @@ def N_cycles_n(n, hs, ev, acc=1e-13):
             The number of cycles left to observe for that harmonic
     """
     F = np.sqrt(ev.m_tot/ev.a**3) / 2./np.pi
-    F_interp = interp1d(ev.t, F, kind='cubic', bounds_error=False, fill_value=(0.,0.))
-    N = solve_ivp(lambda t,y: - n * F_interp(t), [ev.t[0], ev.t[-1]], [0.], t_eval= ev.t, rtol=acc, atol=acc).y[0]
-    N -= N[-1]
+    N = cumulative_trapezoid(F[::-1], ev.t[::-1], initial=0)[::-1]
+    N *= -n
     return n*F, N
 
 

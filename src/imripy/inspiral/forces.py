@@ -128,7 +128,7 @@ class DissipativeForce:
 
     def dm2_dt(self, hs, ko, r, v, opt):
         """
-        Placeholder function that models the mass gain/loss
+        Placeholder function that models the mass gain/loss throughout the orbit
 
         Parameters:
             hs (SystemProp) : The object describing the properties of the host system
@@ -146,8 +146,7 @@ class DissipativeForce:
 
     def dm2_dt_avg(self, hs, ko, opt):
         """
-        The function gives the mass gain due to accretion of the small black hole inside of a halo
-           on a Keplerian orbit with semimajor axis a and eccentricity e
+        The function gives the mass gain due to accretion of the secondary as an average over an orbit
         For a circular orbit the dm2_dt function with the corresponding orbital velocity is used
             for an elliptic orbit the average of the expression is used
 
@@ -602,7 +601,7 @@ class GasGeometricDrag(DissipativeForce):
         disk = self.disk or hs.halo
         r, phi, z = kepler.KeplerOrbit.from_xy_plane_to_rhophi_plane(pos)
 
-        v_gas = disk.velocity(r, phi, z=z) #  TODO: Improve
+        v_gas = disk.velocity(r, phi, z=z)
         v_rel = ( v - v_gas if opt.considerRelativeVelocities
                         else v )
         v_rel_tot = np.sqrt(np.sum(v_rel*v_rel))
@@ -610,7 +609,6 @@ class GasGeometricDrag(DissipativeForce):
         relCovFactor = 1.
         if self.relativisticCorrections:
             relCovFactor = (1. + v_rel_tot**2)**2 / (1. - v_rel_tot**2)
-
 
         F_gd = self.C_drag / 2. * 4.*np.pi * self.r_stellar**2 * disk.density(r,z=z) * v_rel_tot**2
         #print(v, v_gas, v_rel, F_df)

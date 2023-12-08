@@ -39,6 +39,8 @@ class Classic:
                 Wether to orbit prograde or retrograde wrt to some other orbiting object - so far only relevant for accretion disk models
             periapsePrecession : bool
                 Wether to include precession of the periapse due to relativistic precession and mass precession
+            relativisticPrecession : bool
+                Wether to include the relativisticPrecession in the periapse precession calculations. Only relevant if periapePrecession=True
             inclinationChange : bool
                 Wether to include change of the inclination angle due to the dissipative forces
             additionalEvents : list of events passed to scipy.solve_ivp
@@ -49,7 +51,7 @@ class Classic:
         def __init__(self, accuracy=1e-10, verbose=1, elliptic=True, m2_change=False,
                                     dissipativeForces=None, gwEmissionLoss = True, dynamicalFrictionLoss = True,
                                     considerRelativeVelocities=False, progradeRotation = True,
-                                    periapsePrecession = False, inclinationChange=False,
+                                    periapsePrecession = False, relativisticPrecession=True, inclinationChange=False,
                                     additionalEvents = None,
                                     **kwargs):
             self.accuracy = accuracy
@@ -66,6 +68,7 @@ class Classic:
             self.considerRelativeVelocities = considerRelativeVelocities
             self.progradeRotation = progradeRotation
             self.periapsePrecession = periapsePrecession
+            self.relativisticPrecession = relativisticPrecession
             self.inclinationChange = inclinationChange
             self.additionalEvents = additionalEvents
             self.additionalParameters = kwargs
@@ -300,7 +303,7 @@ class Classic:
         a = ko.a; e = ko.e
         T = 2.*np.pi * np.sqrt(a**3/ko.m_tot)
         # relativistic precession
-        dperiapse_angle_dt_rp = 6.*np.pi * ko.m_tot / a / (1.-e**2) / T
+        dperiapse_angle_dt_rp = 6.*np.pi * ko.m_tot / a / (1.-e**2) / T if opt.relativisticPrecession else 0.
 
         # mass precession
         def integrand(phi):
