@@ -128,7 +128,7 @@ def h_n(n, hs, ev, dbg=False, acc=1e-13):
     def g(e):
         return e**(12./19.)/(1. - e**2) * (1. + 121./304. * e**2)**(870./2299.)
     if ev.e[-1] > 0.:
-        t_coal = t_coal * 48./19. / g(ev.e[-1])**4 * quad(lambda e: g(e)**4 *(1-e**2)**(5./2.) /e/(1. + 121./304. * e**2), 0., ev.e[-1], limit=100)[0]   # The eccentric inspiral time according to Maggiore (2007)
+        t_coal = t_coal * 48./19. / g(ev.e[-1])**4 * quad(lambda e: g(e)**4 *(1-e**2)**(5./2.) /e/(1. + 121./304. * e**2), 0., np.clip(ev.e[-1], 0.,1.), limit=100)[0]   # The eccentric inspiral time according to Maggiore (2007)
     t_coal = ev.t[-1] + t_coal
 
     # Now we can calculate the phase of the stationary phase approximation

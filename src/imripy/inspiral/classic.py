@@ -357,20 +357,21 @@ class Classic:
 
     def Evolve(hs, ko, a_fin=0., t_0=0., t_fin=None, opt=EvolutionOptions()):
         """
-        The function evolves the coupled differential equations of the semimajor axis and eccentricity of the Keplerian orbits of the inspiralling system
-            by tracking orbital energy and angular momentum loss due  to gravitational wave radiation, dynamical friction and possibly accretion
+        The function evolves the coupled differential equations of the inspiraling system.
+        The host system defines the central MBH and environment, the Keplerian Orbit the secondary on its orbit.
+        The secondary mass, and its keplerian parameters can be evolved in time.
+        The dissipative forces are part of the EvolutionOptions object.
 
         Parameters:
-            sp (SystemProp) : The object describing the properties of the inspiralling system
-            a_0  (float)    : The initial semimajor axis
-            e_0  (float)    : The initial eccentricity
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the initial orbit
             a_fin (float)   : The semimajor axis at which to stop evolution
             t_0    (float)  : The initial time
             t_fin  (float)  : The time until the system should be evolved, if None then the estimated coalescence time will be used
             opt   (EvolutionOptions) : Collecting the options for the evolution of the differential equations
 
         Returns:
-            ev : Evolution
+            ev : EvolutionResults
                 An evolution object that contains the results
         """
         hs, ko, a_fin, t_0, t_fin, opt = Classic.handle_args(hs, ko, a_fin, t_0, t_fin, opt)
