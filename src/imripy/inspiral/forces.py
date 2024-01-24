@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.integrate import quad, quad_vec, odeint, simpson
-from scipy.interpolate import interp1d, LinearNDInterpolator, CloughTocher2DInterpolator
+from scipy.interpolate import interp1d, LinearNDInterpolator
 import collections
 
 import imripy.constants as c
@@ -846,7 +846,7 @@ class StellarDiffusion(StochasticForce):
     """
     name = "Stellar Diffusion"
 
-    def __init__(self, stellarDistribution : imripy.halo.MatterHaloDF, m1, m2, E_m_s = c.solar_mass_to_pc, E_m_s2 = c.solar_mass_to_pc**2, CoulombLogarithm=None):
+    def __init__(self, stellarDistribution : imripy.halo.MatterHaloDF, m1, m2, E_m_s = c.solar_mass_to_pc, E_m_s2 = None, CoulombLogarithm=None):
         """
         The constructor for the StellarDiffusion class
         The values are initialized according to https://arxiv.org/pdf/2304.13062.pdf if not provided
@@ -869,23 +869,22 @@ class StellarDiffusion(StochasticForce):
         self.stellarDistribution = stellarDistribution
 
         self.E_m_s = E_m_s
-        self.E_m_s2 = E_m_s2
-        self.m = m2
+        self.E_m_s2 = E_m_s2 or E_m_s**2
         self.CoulombLogarithm = CoulombLogarithm or np.log(0.4 * m1 / self.E_m_s)
 
-        self.calc_velocity_diffusion_coeff(m1)
+        self.calc_velocity_diffusion_coeff(m1, m2)
 
 
 
-    def calc_velocity_diffusion_coeff(self, m1, acc=1e-8):
+    def calc_velocity_diffusion_coeff(self, m1, m2, right_r=1e8, acc=1e-8):
         """
         Calculates the velocity diffusion coefficients and saves them in the class for later use as a lambda function.
         This should only be needed once (or when the distribution function stellarDistribution.f changes)
         Eq (24)-(28) from https://arxiv.org/pdf/2304.13062.pdf
         """
 
-        r_grid = np.geomspace(2.*m1, 1e8*2*m1, 60)
-        v_grid = np.geomspace( np.sqrt(2.* self.stellarDistribution.potential(r_grid[-1]))/1e4, np.sqrt(2.*self.stellarDistribution.potential(r_grid[0]))*1e4, 101)
+        r_grid = np.geomspace(2.*m1, right_r*2*m1, 200)
+        v_grid = np.geomspace( np.sqrt(2.* self.stellarDistribution.potential(r_grid[-1]))/1e3, np.sqrt(2.*self.stellarDistribution.potential(r_grid[0]))*1e3, 301)
         R_grid, V_grid = np.meshgrid(r_grid, v_grid)
 
         # The distribution function depends on the specific energy Eps
@@ -905,7 +904,7 @@ class StellarDiffusion(StochasticForce):
                 E_1_int[j,i] = simpson(v_int_grid*f(v_int_grid, r), x=v_int_grid)
         E_1_int /=  V_grid
         #E_1_int_alt /= V_grid
-        E_1 = CloughTocher2DInterpolator( list(zip(np.log(R_grid).flatten(), np.log(V_grid).flatten())),
+        E_1 = LinearNDInterpolator( list(zip(np.log(R_grid).flatten(), np.log(V_grid).flatten())),
                                              E_1_int.flatten())
 
         F_2_int = np.zeros(np.shape(V_grid))
@@ -918,7 +917,7 @@ class StellarDiffusion(StochasticForce):
                 F_2_int[j,i] = simpson(v_int_grid**2 *f(v_int_grid, r), x=v_int_grid)
         F_2_int /= V_grid**2
         #F_2_int_alt /= V_grid**2
-        F_2 = CloughTocher2DInterpolator(list(zip(np.log(R_grid).flatten(), np.log(V_grid).flatten())),
+        F_2 = LinearNDInterpolator(list(zip(np.log(R_grid).flatten(), np.log(V_grid).flatten())),
                                             F_2_int.flatten() )
 
         F_4_int = np.zeros(np.shape(V_grid))
@@ -931,7 +930,7 @@ class StellarDiffusion(StochasticForce):
                 F_4_int[j,i] = simpson(v_int_grid**4 *f(v_int_grid, r), x=v_int_grid)
         F_4_int /= V_grid**4
         #F_4_int_alt /= V_grid**4
-        F_4 = CloughTocher2DInterpolator(list(zip(np.log(R_grid).flatten(), np.log(V_grid).flatten())),
+        F_4 = LinearNDInterpolator(list(zip(np.log(R_grid).flatten(), np.log(V_grid).flatten())),
                                             F_4_int.flatten() )
         '''
         plt.figure(figsize=(12,8))
@@ -964,7 +963,7 @@ class StellarDiffusion(StochasticForce):
         '''
 
         # Make lambda functions for the velocity diffusion coefficients
-        E_v_par_pref =  -16.*np.pi**2 *(self.E_m_s2 + self.m * self.E_m_s ) * self.CoulombLogarithm
+        E_v_par_pref =  -16.*np.pi**2 * self.CoulombLogarithm
         self.E_v_par = lambda r, v: E_v_par_pref * F_2(np.log(r), np.log(v))
 
         E_v_par2_pref = 32./3.*np.pi**2 * self.E_m_s2 * self.CoulombLogarithm
@@ -976,8 +975,8 @@ class StellarDiffusion(StochasticForce):
         plt.figure(figsize=(12,8))
 
         n1_2 = int(len(r_grid)/2)
-        plt.loglog(v_grid, np.abs(self.E_v_par(r_grid[n1_2], v_grid)), label='<$Delta v_\parallel>(r_1/2)$')
-        plt.loglog(v_grid, 4.*np.pi *(self.E_m_s + self.m ) * self.CoulombLogarithm* np.array([imripy.halo.MatterHaloDF.density(self.stellarDistribution, r_grid[n1_2], v_max=v)/v**2  for v in v_grid]),
+        plt.loglog(v_grid, np.abs((self.E_m_s2 + m2*self.E_m_s)*self.E_v_par(r_grid[n1_2], v_grid)), label='<$Delta v_\parallel>(r_1/2)$')
+        plt.loglog(v_grid, 4.*np.pi *(self.E_m_s + m2 ) * self.CoulombLogarithm* np.array([imripy.halo.MatterHaloDF.density(self.stellarDistribution, r_grid[n1_2], v_max=v)/v**2  for v in v_grid]),
                     label='distr(r_1/2)', linestyle='--')
         plt.loglog(v_grid, np.abs(self.E_v_par2(r_grid[n1_2], v_grid)), label='$<Delta v_\parallel^2>(r_1/2)$')
         plt.loglog(v_grid, np.abs(self.E_v_ort2(r_grid[n1_2], v_grid)), label='$<Delta v_\perp^2>(r_1/2)$')
@@ -987,8 +986,8 @@ class StellarDiffusion(StochasticForce):
         C = 8.* np.sqrt(2.*np.pi)/3. * self.E_m_s * rho_f / sigma_f * Clog_prime
         plt.axhline(C, linestyle='--')
 
-        plt.loglog(v_grid, np.abs(self.E_v_par(r_grid[0], v_grid)), label='$<Delta v||>(r_0)$')
-        plt.loglog(v_grid, 4.*np.pi *(self.E_m_s + self.m ) * self.CoulombLogarithm* np.array([imripy.halo.MatterHaloDF.density(self.stellarDistribution, r_grid[0], v_max=v)/v**2  for v in v_grid]),
+        plt.loglog(v_grid, np.abs((self.E_m_s2 + m2*self.E_m_s)*self.E_v_par(r_grid[0], v_grid)), label='$<Delta v||>(r_0)$')
+        plt.loglog(v_grid, 4.*np.pi *(self.E_m_s + m2 ) * self.CoulombLogarithm* np.array([imripy.halo.MatterHaloDF.density(self.stellarDistribution, r_grid[0], v_max=v)/v**2  for v in v_grid]),
                     label='distr(r_0)', linestyle='--')
         plt.loglog(v_grid, np.abs(self.E_v_par2(r_grid[0], v_grid)), label='$<Delta v_\parallel^2>(r_0)$')
         plt.loglog(v_grid, np.abs(self.E_v_ort2(r_grid[0], v_grid)), label='$<Delta v_\perp^2>(r_0)$')
@@ -1019,9 +1018,9 @@ class StellarDiffusion(StochasticForce):
         a = ko.a; e = ko.e
         def integrand(phi):
             r, v = ko.get_orbital_parameters(phi)
-            deps = v * self.E_v_par(r, v) + self.E_v_par2(r, v) / 2. + self.E_v_ort2(r, v) / 2. # the negative signs cancel out ?
+            deps = v *(self.E_m_s2 + ko.m2 * self.E_m_s)* self.E_v_par(r, v) + self.E_v_par2(r, v) / 2. + self.E_v_ort2(r, v) / 2. # the negative signs cancel out ?
             return deps / (1.+e*np.cos(phi))**2
-        dE_dt = self.m * (1.-e**2)**(3./2.) /2./np.pi * quad(integrand, 0., 2.*np.pi, limit=100)[0] # the 1/T is in the 1/2pi
+        dE_dt = ko.m2 * (1.-e**2)**(3./2.) /2./np.pi * quad(integrand, 0., 2.*np.pi, limit=100)[0] # the 1/T is in the 1/2pi
         return - dE_dt
 
     def dL_dt(self, hs, ko, opt):
@@ -1042,9 +1041,9 @@ class StellarDiffusion(StochasticForce):
         J = np.sqrt(ko.m1 * a * (1.-e**2))
         def integrand(phi):
             r, v = ko.get_orbital_parameters(phi)
-            dJ = J / v * self.E_v_par(r, v) + r**2 / J / 4. * self.E_v_ort2(r, v)
+            dJ = J / v *(self.E_m_s2 + ko.m2 * self.E_m_s )* self.E_v_par(r, v) + r**2 / J / 4. * self.E_v_ort2(r, v)
             return dJ / (1.+e*np.cos(phi))**2
-        dL_dt = self.m  * (1.-e**2)**(3./2.) /2./np.pi * quad(integrand, 0., 2.*np.pi, limit=100)[0]  # the 1/T is in the 1/2pi
+        dL_dt = ko.m2  * (1.-e**2)**(3./2.) /2./np.pi * quad(integrand, 0., 2.*np.pi, limit=100)[0]  # the 1/T is in the 1/2pi
         #plt.plot(np.linspace(0., 2.*np.pi, 100), [integrand(p) for p in np.linspace(0., 2.*np.pi, 100)])
         return - dL_dt
 
@@ -1076,19 +1075,19 @@ class StellarDiffusion(StochasticForce):
             r, v = ko.get_orbital_parameters(phi)
             deps2 = v**2 *  self.E_v_par2(r, v)
             return deps2 / (1.+e*np.cos(phi))**2
-        D_EE = 2.* self.m**2 * (1.-e**2)**(3./2.)  /2./np.pi * quad(integrand_deps2, 0., np.pi, limit=60)[0] # The factor of 2 because we only integrate over half the orbit pi
+        D_EE = 2.* ko.m2**2 * (1.-e**2)**(3./2.)  /2./np.pi * quad(integrand_deps2, 0., np.pi, limit=60)[0] # The factor of 2 because we only integrate over half the orbit pi
 
         def integrand_dJ2(phi):
             r, v = ko.get_orbital_parameters(phi)
             dJ2 = J**2 / v**2 * self.E_v_par2(r, v) + 1./2. *( r**2 - J**2/v**2) * self.E_v_ort2(r, v)
             return dJ2 / (1.+e*np.cos(phi))**2
-        D_LL = 2.* self.m**2 * (1.-e**2)**(3./2.) /2./np.pi * quad(integrand_dJ2, 0., np.pi, limit=60)[0]
+        D_LL = 2.* ko.m2**2 * (1.-e**2)**(3./2.) /2./np.pi * quad(integrand_dJ2, 0., np.pi, limit=60)[0]
 
         def integrand_dJdeps(phi):
             r, v = ko.get_orbital_parameters(phi)
             dJdeps = J *self.E_v_par2(r, v)
             return dJdeps / (1.+e*np.cos(phi))**2
-        D_EL =  2.* self.m**2 * (1.-e**2)**(3./2.) /2./np.pi * quad(integrand_dJdeps, 0., np.pi, limit=60)[0]
+        D_EL =  2.* ko.m2**2 * (1.-e**2)**(3./2.) /2./np.pi * quad(integrand_dJdeps, 0., np.pi, limit=60)[0]
 
         sigma = np.zeros((2,2))
         sigma[0,0] =  np.sqrt(D_EE)
