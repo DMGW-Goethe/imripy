@@ -136,29 +136,30 @@ def plotDeltaN(hs, ev_0, ev_1, ax_dN, ax_di=None, n=2, acc=1e-13, plotFgw5year=F
         dN   : array_like
             The difference in cycles of the two systems
     """
-    f_gw0, N_0 = waveform.N_cycles_n(n, hs, ev_0, acc=acc)
-    N_0interp = interp1d(f_gw0, N_0, kind='cubic', bounds_error=False, fill_value=(0.,0.))
-    f_gw1, N_1 = waveform.N_cycles_n(n, hs, ev_1, acc=acc)
+    ev_0.f_gw, ev_0.N = waveform.N_cycles_n(n, hs, ev_0, acc=acc)
+    N_0interp = interp1d(ev_0.f_gw, ev_0.N, kind='cubic', bounds_error=False, fill_value=(0.,0.))
+    ev_1.f_gw, ev_1.N = waveform.N_cycles_n(n, hs, ev_1, acc=acc)
 
-    dN = N_1 - N_0interp(f_gw1)
-    l, = ax_dN.loglog(f_gw1/c.hz_to_invpc, np.abs(dN), **kwargs)
+    dN = ev_1.N - N_0interp(ev_1.f_gw)
+    l, = ax_dN.loglog(ev_1.f_gw/c.hz_to_invpc, np.abs(dN), **kwargs)
 
     if plotFgw5year:
-        l, f5yrs = plotLastTyears(hs, ev_1, ax_dN, t=5.*c.year_to_pc, n=n, marker='p', y=interp1d(f_gw1, np.abs(dN)), color=l.get_c())
+        l, f5yrs = plotLastTyears(hs, ev_1, ax_dN, t=5.*c.year_to_pc, n=n, marker='p', y=interp1d(ev_1.f_gw, np.abs(dN)), color=l.get_c())
 
     if not ax_di is None:
-        ddN_df = np.gradient(dN, f_gw1)
+        ddN_df = np.gradient(dN, ev_1.f_gw)
         stop = np.where(np.abs(dN) < min_dN)[0]
         stop = stop[0] if len(stop) > 0 else len(ddN_df)
         if 'color' in kwargs:
             del kwargs['color']
         # print(f_gw1, N_1, dN, ddN_df, ddN_df/dN * f_gw1)
-        ax_di.plot(f_gw1[:stop]/c.hz_to_invpc, (ddN_df/dN * f_gw1)[:stop], color=l.get_c(), **kwargs)
+        ax_di.plot(ev_1.f_gw[:stop]/c.hz_to_invpc, (ddN_df/dN * ev_1.f_gw)[:stop], color=l.get_c(), **kwargs)
 
-    return f_gw1, dN
+    return ev_1.f_gw, dN
 
 
-def streamline(ax, hs, opt, m2, a_grid, j_grid, cmap='plasma'):
+
+def streamline(ax, hs, opt, ko, a_grid, e_grid, cmap='plasma'):
     """
     Plots the streamlines and their strength of the ode system in a and j space.
     a is the semimajor axis and j the specific angular momentum.
@@ -168,24 +169,25 @@ def streamline(ax, hs, opt, m2, a_grid, j_grid, cmap='plasma'):
         ax (plt.axes)                   : The axes on which to plot
         hs (merger_system.HostSystem)   : The object describing the properties of the host system
         opt (inspiral.Classic.EvolutionOptions) : The evolution options. The important part is opt.dissipativeForces
-        m2  (float)                     : Mass of the secondary
+        ko  (KeplerOrbit)               : The parameters for a kepler orbit -- a and e will be ignored and taken from a_grid, e_grid
         a_grid (np.array)               : The grid in semimajor axis a
-        j_grid (np.array)               : The grid in specific angular momemtum j
+        e_grid (np.array)               : The grid in eccentricity e
         cmap (plt colormap) (optional)  : A plt colormap or the identifying name
 
     Returns:
         out : matplotlib.image.AxesImage
             The axes image plotted
     """
-    na = len(a_grid); ne = len(j_grid)
+    na = len(a_grid); ne = len(e_grid)
 
-    a, j = np.meshgrid(a_grid, j_grid)
-    e = np.sqrt(1. - j**2)
-    e_grid = np.sqrt(1. - j_grid**2)
+    #a, j = np.meshgrid(a_grid, j_grid)
+    a, e = np.meshgrid(a_grid, e_grid)
+    #e = np.sqrt(1. - j**2)
+    #e_grid = np.sqrt(1. - j_grid**2)
     da_grid = np.zeros(np.shape(a))
-    dj_grid = np.zeros(np.shape(j))
+    #dj_grid = np.zeros(np.shape(j))
+    de_grid = np.zeros(np.shape(e))
 
-    ko = kepler.KeplerOrbit(hs, m2, 0., prograde=opt.progradeRotation)
     # Calculate Derivatives
     for i in range(na):
         for k in range(ne):
@@ -193,19 +195,24 @@ def streamline(ax, hs, opt, m2, a_grid, j_grid, cmap='plasma'):
                 continue
             ko.a = a_grid[i]; ko.e = e[k,i]
             da_grid[k,i], dE_dt = inspiral.Classic.da_dt(hs, ko, opt=opt, return_dE_dt=True)
-            dj_grid[k,i] = -e[k,i]/j[k,i] * inspiral.Classic.de_dt(hs, ko, dE_dt=dE_dt, opt=opt)
+            #dj_grid[k,i] = -e[k,i]/j[k,i] * inspiral.Classic.de_dt(hs, ko, dE_dt=dE_dt, opt=opt)
+            de_grid[k,i] =  inspiral.Classic.de_dt(hs, ko, dE_dt=dE_dt, opt=opt)
 
     dloga = da_grid/a
-    dlogj = dj_grid/j
-    speed = np.sqrt(dlogj**2 + dloga**2)
+    #dlogj = dj_grid/j
+    dlog1me = -de_grid/(1.-e)
+    speed = np.sqrt(dlog1me**2 + dloga**2)
 
     # Plot Streamlines & Strength
     im = ax.imshow(speed.T, norm='log',
-                   extent = [np.log10(j_grid[0]), np.log10(j_grid[-1]), np.log10(a_grid[0]/hs.r_isco), np.log10(a_grid[-1]/hs.r_isco)],
+                   #extent = [np.log10(j_grid[0]), np.log10(j_grid[-1]), np.log10(a_grid[0]/hs.r_isco), np.log10(a_grid[-1]/hs.r_isco)],
+                   extent = [np.log10(1.-e_grid[0]), np.log10(1.-e_grid[-1]), np.log10(a_grid[0]/hs.r_isco), np.log10(a_grid[-1]/hs.r_isco)],
                   origin = 'lower', interpolation='bilinear', aspect='auto', cmap=cmap, zorder=1)
-    strm = ax.streamplot(np.log10(j_grid), np.log10(a_grid/hs.r_isco),
-                  dlogj.T, dloga.T, color='black', zorder=1)
+    #strm = ax.streamplot(np.log10(j_grid), np.log10(a_grid/hs.r_isco),
+    strm = ax.streamplot(np.log10(1-e_grid), np.log10(a_grid/hs.r_isco),
+                  dlog1me.T, dloga.T, color='black', zorder=1)
     # Cover Loss cone
-    ax.plot(np.log10(j_grid), np.log10(8./6./(1.-e_grid)), color='black', zorder=2)
-    ax.fill_between(np.log10(j_grid), np.log10(8./6./(1.-e_grid)), color='gray', alpha=1., zorder=2)
+    #ax.plot(np.log10(j_grid), np.log10(8./6./(1.-e_grid)), color='black', zorder=2)
+    ax.plot(np.log10(1.-e_grid), np.log10(8./6./(1.-e_grid)), color='black', zorder=2)
+    ax.fill_between(np.log10(1.-e_grid), np.log10(8./6./(1.-e_grid)), color='gray', alpha=1., zorder=2)
     return im
