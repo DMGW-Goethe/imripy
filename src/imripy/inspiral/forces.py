@@ -329,34 +329,6 @@ class DissipativeForceSS(DissipativeForce):
     def __str__(self):
         return self.name
 
-class StochasticForce(DissipativeForce):
-    """
-    This class extends the dissipative force class
-    to include a stochastic component that induces Brownian motion
-    in the energy and angular momentum space
-
-    See the Stochastic Solver for a thorough description
-    """
-    name = "StochasticForce"
-
-
-    def dEdL_diffusion(self, hs, ko, opt):
-        """
-        Placeholder function that should return the Brownian motion in energy E and angular momentum L.
-        The variances of E, L are expected on the diagonal [0,0], [1,1], and the covariance
-         on the offdiagonal.
-
-        Parameters:
-            hs (HostSystem) : The host system object
-            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
-            opt (EvolutionOptions): The options for the evolution of the differential equations
-
-        Returns:
-            out : np.ndarray with shape=(2,2)
-                The diffusion matrix for the SDE
-        """
-        pass
-
 
 
 class GWLoss(DissipativeForceSS):
@@ -744,8 +716,6 @@ class AccretionLoss(DissipativeForceSS):
         """
         return self.dm2_dt(hs, ko, r, v, opt) *  v
 
-
-
 class GasInteraction(DissipativeForceSS):
     name = "GasInteraction"
 
@@ -826,185 +796,260 @@ class GasInteraction(DissipativeForceSS):
 
         return F_gas
 
+
+class StochasticForce(DissipativeForce):
+    """
+    This class extends the dissipative force class
+    to include a stochastic component that induces Brownian motion
+    in the energy and angular momentum space
+
+    See the Stochastic Solver for a thorough description
+    """
+    name = "StochasticForce"
+
+    def da_dt(self, Classic, hs, ko, opt):
+        """
+        Modified da_dt that takes into account the Stochastic contribution via the Ito formula
+            in the time derivative of a
+        This is called in the inspiral.Classic case, but not in the inspiral.Stochastic case, to avoid recomputing too many objects
+
+        Parameters
+        -------
+            Classic (imripy.inspiral.Classic) : The class to avoid a circular import :'(
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+
+        Returns
+        -------
+            da_dt : float
+                The time derivative of a containing the stochastic contribution
+        """
+        a = ko.a; e = ko.e
+        E = Classic.E_orbit(hs, ko, opt)
+
+        # Classic contribution
+        dE_dt = self.dE_dt(hs, ko, opt)
+        dE_orbit_da = Classic.dE_orbit_da(hs, ko, opt)
+        da_dt_classic = dE_dt / dE_orbit_da
+
+        # Stochastic contribution
+        if hasattr(self, "D_EE"):
+            D_EE = self.D_EE(hs, ko)
+        else:
+            sigma = self.dEdL_diffusion(hs, ko, opt=opt)
+            D = np.matmul(sigma, sigma.T)
+            D_EE = D[0,0]
+        H_a = -2.*a/E**2
+        da_dt_stochastic =  D_EE*H_a / 2.
+
+        return (da_dt_classic + da_dt_stochastic)
+
+
+    def de_dt(self, Classic, hs, ko, opt):
+        """
+        Modified de_dt that takes into account the stochastic contribution via the Ito formula
+            in the time derivative of e
+        This is called in the inspiral.Classic case, but not in the inspiral.Stochastic case, to avoid recomputing too many objects
+
+        Parameters
+        -------
+            Classic (imripy.inspiral.Classic) : The class to avoid a circular import :'(
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+
+        Returns
+        -------
+            da_dt : float
+                The time derivative of a containing the stochastic contribution
+        """
+
+        a = ko.a; e = ko.e
+        E = Classic.E_orbit(hs, ko, opt)
+        L = Classic.L_orbit(hs, ko, opt)
+
+        # Classic contribution
+        dE_dt = self.dE_dt(hs, ko, opt)
+        dL_dt = self.dL_dt(hs, ko, opt)
+        de_dt_classic =  - (1.-ko.e**2)/2./ko.e *(  dE_dt/E + 2. * dL_dt/L   )
+
+        # Stochastic contribution
+        sigma = self.dEdL_diffusion(hs, ko, opt=opt)
+        D = np.matmul(sigma, sigma.T)
+
+        pref = 2./ko.m_red**3 / ko.m_tot**2
+        He = -pref * np.array([[ - pref * L**4 / 4. / e**3, L * (e**2 + 1.) / 2. / e**3],
+                                [0.,  E / e**3]])
+        He[1,0] = He[0,1]
+        de_dt_stochastic =  np.sum(D*He)/2. # elementwise addition
+
+        return (de_dt_classic + de_dt_stochastic)
+
+
+
+    def dEdL_diffusion(self, hs, ko, opt):
+        """
+        Function that returns the Brownian motion in energy E and angular momentum L,
+            calculated with the help of the diffusion coefficients the class defined
+            D_EE, D_EL, D_LL
+        If these functions are not defined this function has to be overwritten!
+
+        Parameters:
+            hs (HostSystem) : The host system object
+            ko (KeplerOrbit): The Kepler orbit object describing the current orbit
+            opt (EvolutionOptions): The options for the evolution of the differential equations
+
+        Returns:
+            out : np.ndarray with shape=(2,2)
+                The diffusion matrix for the SDE
+        """
+        D_EE = self.D_EE(hs, ko)
+        D_EL = self.D_EL(hs, ko)
+        D_LL = self.D_LL(hs, ko)
+
+        sigma = np.zeros((2,2))
+        sigma[0,0] =  np.sqrt(D_EE)
+        sigma[1,0] =  D_EL / np.sqrt(D_EE)                  if np.abs(D_EE) > 0. else 0.
+        sigma[1,1] =  np.sqrt( D_LL - D_EL**2 / D_EE )       if np.abs(D_EE) > 0. else np.sqrt(D_LL)
+
+        #print(rf"D_EE = {D_EE:.3e}, D_LL = {D_LL:.3e}, D_EL = {D_EL:.3e}, D={np.matmul(sigma, sigma.T)}")
+        return sigma
+
+    def dinclination_angle_dt(self, hs, ko, opt):
+        """
+        For now we assume the simple spherically symmetric case with no inclination change. Here, the formalism could be expanded
+        """
+        return 0.
+
+
 class StellarDiffusion(StochasticForce):
     """
-    The class for modeling stellar diffusion effects in an IMRI. There is an averaged loss and a stochastic component to this
-    This is modeled after https://arxiv.org/pdf/2304.13062.pdf
+    The class for modeling stellar diffusion effects a la https://arxiv.org/pdf/1508.01390.pdf
 
     Attributes:
         stellarDistribution : imripy.halo.MatterHaloDF
             Object describing the stellar distribution
         E_m_s : float
             The first mass moment of the stellar distribution
-        E_m_s2 : float
-            The second mass moment of the stellar distribution
         CoulombLogarithm : float
             The CoulombLogarithm describing the strength of the scattering
-        m : float
-            The mass of the secondary object subject to stellar diffusion
 
     """
     name = "Stellar Diffusion"
 
-    def __init__(self, stellarDistribution : imripy.halo.MatterHaloDF, m1, m2, E_m_s = c.solar_mass_to_pc, E_m_s2 = None, CoulombLogarithm=None):
+    def __init__(self, hs, stellarDistribution : imripy.halo.MatterHaloDF, E_m_s = c.solar_mass_to_pc, CoulombLogarithm=None):
         """
         The constructor for the StellarDiffusion class
         The values are initialized according to https://arxiv.org/pdf/2304.13062.pdf if not provided
 
         Parameters:
-            istellarDistribution : imripy.halo.MatterHaloDF
+            hs : imripy.merger_system.HostSystem
+                Host System Object
+            stellarDistribution : imripy.halo.MatterHaloDF
                 Object describing the stellar distribution
             m1 : float
                 The mass of the central MBH
-            m2 : float
-                The mass of the secondary
             E_m_s : (optional) float
                 The first mass moment of the stellar distribution
-            E_m_s2 :(optional)  float
-                The second mass moment of the stellar distribution
             CoulombLogarithm : (optional) float
                 The CoulombLogarithm describing the strength of the scattering - alternatively m1 is used for estimation
         """
         super().__init__()
         self.stellarDistribution = stellarDistribution
-
         self.E_m_s = E_m_s
-        self.E_m_s2 = E_m_s2 or E_m_s**2
-        self.CoulombLogarithm = CoulombLogarithm or np.log(0.4 * m1 / self.E_m_s)
+        self.CoulombLogarithm = CoulombLogarithm or np.log(0.4 * hs.m1 / self.E_m_s)
 
-        self.calc_velocity_diffusion_coeff(m1, m2)
+        self.calc_velocity_diffusion_coeff(hs.m1)
 
+    def f(self, E):
+        """
+        Brings the distribution function from the stellarDistribution class to the right normalization to be compatible with
+            https://arxiv.org/pdf/1508.01390.pdf
+        In the code (and with previous DM literature), the distribution function is normalized to the mass, while in the stellar diffusion literature
+            it is normalized to the number density -> Normalize by a factor of the average mass
 
+        Parameters:
+            E (float) : The specific energy ( E = m1/2a )
 
-    def calc_velocity_diffusion_coeff(self, m1, m2, right_r=1e8, acc=1e-8):
+        Returns:
+            f (float) : The value of the distribution function
+        """
+        return self.stellarDistribution.f(E) / self.E_m_s
+
+    def potential(self, r):
+        """
+        The potential of the spherically symmetric system
+
+        Parameters:
+            r (float) : The radius
+
+        Returns:
+            phi (float) : The value of the potential
+        """
+        return self.stellarDistribution.potential(r)
+
+    def calc_velocity_diffusion_coeff(self, m1, right_r=1e8, n_r = 200, n_v = 301):
         """
         Calculates the velocity diffusion coefficients and saves them in the class for later use as a lambda function.
         This should only be needed once (or when the distribution function stellarDistribution.f changes)
-        Eq (24)-(28) from https://arxiv.org/pdf/2304.13062.pdf
-        """
+        See App. of https://arxiv.org/pdf/2304.13062.pdf
 
-        r_grid = np.geomspace(2.*m1, right_r*2*m1, 200)
-        v_grid = np.geomspace( np.sqrt(2.* self.stellarDistribution.potential(r_grid[-1]))/1e3, np.sqrt(2.*self.stellarDistribution.potential(r_grid[0]))*1e3, 301)
+        Parameters:
+            right_r (float): The right end of the grid in r, multiplying r_isco
+            n_r (int) : The size of the r grid
+            n_v (int) : The size of the v grid
+        """
+        r_grid = np.geomspace(2.*m1, right_r*2*m1, n_r)
+        v_grid = np.geomspace( np.sqrt(2.* self.potential(r_grid[-1]))/1e3, np.sqrt(2.*self.potential(r_grid[0]))*1e3, n_v)
         R_grid, V_grid = np.meshgrid(r_grid, v_grid)
 
         # The distribution function depends on the specific energy Eps
-        f = lambda v, r: self.stellarDistribution.f( np.clip(- v**2 /2. + self.stellarDistribution.potential(r), 0., None)) / self.E_m_s
-        #f = lambda v, r: self.stellarDistribution.f( - v**2 /2. + self.stellarDistribution.potential(r))
+        f = lambda v, r: self.f( np.clip(- v**2 /2. + self.potential(r), 0., None))
 
         # Calculte E_1, F_2, and F_4 for interpolation
         E_1_int = np.zeros(np.shape(V_grid))
-        #E_1_int_alt = np.zeros(np.shape(V_grid))
         for i, r in enumerate(r_grid):
-            #E_1_int_alt[:,i] = np.array([quad(lambda v_int : v_int * f(v_int, r), v, np.sqrt(2.*self.stellarDistribution.potential(r)))[0] for v in v_grid])
-            #E_1_int_alt[:,i] = odeint( lambda a, v_int : -v_int *f(-v_int, r),  0, -v_grid[::-1], atol=acc)[:,0][::-1]
             for j,v in enumerate(v_grid):
                 if v > np.sqrt(2.*self.stellarDistribution.potential(r)):
                     continue
                 v_int_grid = np.linspace(v, np.sqrt(2.*self.stellarDistribution.potential(r)), 1000)
                 E_1_int[j,i] = simpson(v_int_grid*f(v_int_grid, r), x=v_int_grid)
         E_1_int /=  V_grid
-        #E_1_int_alt /= V_grid
-        E_1 = LinearNDInterpolator( list(zip(np.log(R_grid).flatten(), np.log(V_grid).flatten())),
+        E_1 = LinearNDInterpolator( list(zip(np.log(R_grid).flatten(), np.log(V_grid).flatten())), # after tests, the logarithmic interpolation seems to work better
                                              E_1_int.flatten())
 
         F_2_int = np.zeros(np.shape(V_grid))
-        #F_2_int_alt = np.zeros(np.shape(V_grid))
         for i, r in enumerate(r_grid):
-            #F_2_int_alt[:,i] = np.array([quad(lambda v_int : v_int**2 * f(v_int, r), 0, v)[0] for v in v_grid])
-            #F_2_int_alt[:,i] = odeint( lambda a, v_int : v_int**2 * f(np.exp(v_int), r), 0., v_grid)[:,0]
             for j,v in enumerate(v_grid):
                 v_int_grid = np.linspace(0, v, 1000)
                 F_2_int[j,i] = simpson(v_int_grid**2 *f(v_int_grid, r), x=v_int_grid)
         F_2_int /= V_grid**2
-        #F_2_int_alt /= V_grid**2
         F_2 = LinearNDInterpolator(list(zip(np.log(R_grid).flatten(), np.log(V_grid).flatten())),
                                             F_2_int.flatten() )
 
         F_4_int = np.zeros(np.shape(V_grid))
-        #F_4_int_alt = np.zeros(np.shape(V_grid))
         for i, r in enumerate(r_grid):
-            #F_4_int_alt[:,i] = np.array([quad(lambda v_int : v_int**4 * f(v_int, r), 0, v)[0] for v in v_grid])
-            #F_4_int_alt[:,i] = odeint( lambda a, v_int : v_int**4 * f(v_int, r), 0., v_grid, atol=acc)[:,0]
             for j,v in enumerate(v_grid):
                 v_int_grid = np.linspace(0, v, 1000)
                 F_4_int[j,i] = simpson(v_int_grid**4 *f(v_int_grid, r), x=v_int_grid)
         F_4_int /= V_grid**4
-        #F_4_int_alt /= V_grid**4
         F_4 = LinearNDInterpolator(list(zip(np.log(R_grid).flatten(), np.log(V_grid).flatten())),
                                             F_4_int.flatten() )
-        '''
-        plt.figure(figsize=(12,8))
-        n1_2 = int(len(r_grid)/2)
-        plt.loglog(v_grid, np.array([f(v, r_grid[0]) for v in v_grid]), label='f(r_0)')
-        plt.loglog(v_grid, np.array([f(v, r_grid[n1_2]) for v in v_grid]), label='f(r_1/2)')
-        plt.loglog(v_grid, np.array([f(v, r_grid[-1]) for v in v_grid]), label='f(r_1)')
-
-        #plt.loglog(v_grid, F_2_int[:,0], label='F_2(r_0)', linestyle='-.')
-        #plt.loglog(v_grid, F_2_int[:,n1_2], label='F_2(r_1/2)', linestyle='-.')
-        #plt.loglog(v_grid, F_2_int[:,-1], label='F_2(r_1)', linestyle='-.')
-        #plt.loglog(v_grid, F_2_int_alt[:,0], label='F_2(r_0)', linestyle='--')
-        #plt.loglog(v_grid, F_2_int_alt[:,n1_2], label='F_2(r_1/2)', linestyle='--')
-        #plt.loglog(v_grid, F_2_int_alt[:,-1], label='F_2(r_1)', linestyle='--')
-
-        #plt.loglog(v_grid, F_4_int[:,0], label='F_4(r_0)', linestyle='-.')
-        #plt.loglog(v_grid, F_4_int[:,n1_2], label='F_4(r_1/2)', linestyle='-.')
-        #plt.loglog(v_grid, F_4_int[:,-1], label='F_4(r_1)', linestyle='-.')
-        #plt.loglog(v_grid, F_4_int_alt[:,0], label='F_4(r_0)', linestyle='--')
-        #plt.loglog(v_grid, F_4_int_alt[:,n1_2], label='F_4(r_1/2)', linestyle='--')
-        #plt.loglog(v_grid, F_4_int_alt[:,-1], label='F_4(r_1)', linestyle='--')
-
-        #plt.loglog(v_grid, E_1_int[:,0], label='E_1(r_0)', linestyle='-.')
-        #plt.loglog(v_grid, E_1_int[:,n1_2], label='E_1(r_1/2)', linestyle='-.')
-        #plt.loglog(v_grid, E_1_int[:,-1], label='E_1(r_1)', linestyle='-.')
-        #plt.loglog(v_grid, E_1_int_alt[:,0], label='E_1(r_0)', linestyle='--')
-        #plt.loglog(v_grid, E_1_int_alt[:,n1_2], label='E_1(r_1/2)', linestyle='--')
-        #plt.loglog(v_grid, E_1_int_alt[:,-1], label='E_1(r_1)', linestyle='--')
-        plt.legend(); plt.grid()
-        '''
 
         # Make lambda functions for the velocity diffusion coefficients
-        E_v_par_pref =  -16.*np.pi**2 * self.CoulombLogarithm
+        E_v_par_pref =  -16.*np.pi**2 * self.CoulombLogarithm # without m2, this is added later
         self.E_v_par = lambda r, v: E_v_par_pref * F_2(np.log(r), np.log(v))
 
-        E_v_par2_pref = 32./3.*np.pi**2 * self.E_m_s2 * self.CoulombLogarithm
+        E_v_par2_pref = 32./3.*np.pi**2 * self.E_m_s**2 * self.CoulombLogarithm
         self.E_v_par2 = lambda r, v: E_v_par2_pref * v * (F_4(np.log(r), np.log(v)) + E_1(np.log(r), np.log(v)))
 
         E_v_ort2_pref = E_v_par2_pref
         self.E_v_ort2 = lambda r, v: E_v_ort2_pref * v * (3*F_2(np.log(r), np.log(v)) - F_4(np.log(r), np.log(v)) + 2*E_1(np.log(r), np.log(v)))
 
-        plt.figure(figsize=(12,8))
-
-        n1_2 = int(len(r_grid)/2)
-        plt.loglog(v_grid, np.abs((self.E_m_s2 + m2*self.E_m_s)*self.E_v_par(r_grid[n1_2], v_grid)), label='<$Delta v_\parallel>(r_1/2)$')
-        plt.loglog(v_grid, 4.*np.pi *(self.E_m_s + m2 ) * self.CoulombLogarithm* np.array([imripy.halo.MatterHaloDF.density(self.stellarDistribution, r_grid[n1_2], v_max=v)/v**2  for v in v_grid]),
-                    label='distr(r_1/2)', linestyle='--')
-        plt.loglog(v_grid, np.abs(self.E_v_par2(r_grid[n1_2], v_grid)), label='$<Delta v_\parallel^2>(r_1/2)$')
-        plt.loglog(v_grid, np.abs(self.E_v_ort2(r_grid[n1_2], v_grid)), label='$<Delta v_\perp^2>(r_1/2)$')
-        Clog_prime = self.CoulombLogarithm
-        sigma_f = np.sqrt(m1 / (1. + self.stellarDistribution.alpha) / r_grid[n1_2])
-        rho_f = self.stellarDistribution.density(r_grid[n1_2])
-        C = 8.* np.sqrt(2.*np.pi)/3. * self.E_m_s * rho_f / sigma_f * Clog_prime
-        plt.axhline(C, linestyle='--')
-
-        plt.loglog(v_grid, np.abs((self.E_m_s2 + m2*self.E_m_s)*self.E_v_par(r_grid[0], v_grid)), label='$<Delta v||>(r_0)$')
-        plt.loglog(v_grid, 4.*np.pi *(self.E_m_s + m2 ) * self.CoulombLogarithm* np.array([imripy.halo.MatterHaloDF.density(self.stellarDistribution, r_grid[0], v_max=v)/v**2  for v in v_grid]),
-                    label='distr(r_0)', linestyle='--')
-        plt.loglog(v_grid, np.abs(self.E_v_par2(r_grid[0], v_grid)), label='$<Delta v_\parallel^2>(r_0)$')
-        plt.loglog(v_grid, np.abs(self.E_v_ort2(r_grid[0], v_grid)), label='$<Delta v_\perp^2>(r_0)$')
-        Clog_prime = self.CoulombLogarithm
-        sigma_f = np.sqrt(m1 / (1. + self.stellarDistribution.alpha) / r_grid[0])
-        rho_f = self.stellarDistribution.density(r_grid[0])
-        C = 8.* np.sqrt(2.*np.pi)/3. * self.E_m_s * rho_f / sigma_f * Clog_prime
-        plt.axhline(C, linestyle='--')
-
-        plt.legend(); plt.grid()
-
-
-
     def dE_dt(self, hs, ko, opt):
         """
         Calculates the average energy loss due to stellar diffusion.
-        Eq (14) from https://arxiv.org/pdf/2304.13062.pdf
 
         Parameters:
             hs (HostSystem) : The host system object
@@ -1018,15 +1063,14 @@ class StellarDiffusion(StochasticForce):
         a = ko.a; e = ko.e
         def integrand(phi):
             r, v = ko.get_orbital_parameters(phi)
-            deps = v *(self.E_m_s2 + ko.m2 * self.E_m_s)* self.E_v_par(r, v) + self.E_v_par2(r, v) / 2. + self.E_v_ort2(r, v) / 2. # the negative signs cancel out ?
+            deps = v *(self.E_m_s**2 + ko.m2 * self.E_m_s)* self.E_v_par(r, v) + self.E_v_par2(r, v) / 2. + self.E_v_ort2(r, v) / 2. # the negative signs cancel out ?
             return deps / (1.+e*np.cos(phi))**2
-        dE_dt = ko.m2 * (1.-e**2)**(3./2.) /2./np.pi * quad(integrand, 0., 2.*np.pi, limit=100)[0] # the 1/T is in the 1/2pi
+        dE_dt = 2.* ko.m2 * (1.-e**2)**(3./2.) /2./np.pi * quad(integrand, 0., np.pi, limit=100)[0] # the 1/T is in the 1/2pi
         return - dE_dt
 
     def dL_dt(self, hs, ko, opt):
         """
         Calculates the average angular momentum loss due to stellar diffusion.
-        Eq (16) from https://arxiv.org/pdf/2304.13062.pdf
 
         Parameters:
             hs (HostSystem) : The host system object
@@ -1041,22 +1085,15 @@ class StellarDiffusion(StochasticForce):
         J = np.sqrt(ko.m1 * a * (1.-e**2))
         def integrand(phi):
             r, v = ko.get_orbital_parameters(phi)
-            dJ = J / v *(self.E_m_s2 + ko.m2 * self.E_m_s )* self.E_v_par(r, v) + r**2 / J / 4. * self.E_v_ort2(r, v)
+            dJ = J / v *(self.E_m_s**2 + ko.m2 * self.E_m_s )* self.E_v_par(r, v) + r**2 / J / 4. * self.E_v_ort2(r, v)
             return dJ / (1.+e*np.cos(phi))**2
-        dL_dt = ko.m2  * (1.-e**2)**(3./2.) /2./np.pi * quad(integrand, 0., 2.*np.pi, limit=100)[0]  # the 1/T is in the 1/2pi
-        #plt.plot(np.linspace(0., 2.*np.pi, 100), [integrand(p) for p in np.linspace(0., 2.*np.pi, 100)])
+        dL_dt = 2.* ko.m2  * (1.-e**2)**(3./2.) /2./np.pi * quad(integrand, 0., np.pi, limit=100)[0]  # the 1/T is in the 1/2pi
         return - dL_dt
 
-    def dinclination_angle_dt(self, hs, ko, opt):
-        """
-        For now we assume the stellar distribution to be spherically symmetric, so there is no inclination change
-        """
-        return 0.
 
     def dEdL_diffusion(self, hs, ko, opt):
         """
         Calculates the matrix for the diffusion term of the SDE due to stellar diffusion.
-        The variances are on the diagonal according to Eq(15) and (17), the covariance is on the off-diagonal Eq(18)
 
         Parameters:
             hs (HostSystem) : The host system object
@@ -1087,15 +1124,165 @@ class StellarDiffusion(StochasticForce):
             r, v = ko.get_orbital_parameters(phi)
             dJdeps = J *self.E_v_par2(r, v)
             return dJdeps / (1.+e*np.cos(phi))**2
-        D_EL =  2.* ko.m2**2 * (1.-e**2)**(3./2.) /2./np.pi * quad(integrand_dJdeps, 0., np.pi, limit=60)[0]
+        D_EL = -2.* ko.m2**2 * (1.-e**2)**(3./2.) /2./np.pi * quad(integrand_dJdeps, 0., np.pi, limit=60)[0]
 
         sigma = np.zeros((2,2))
         sigma[0,0] =  np.sqrt(D_EE)
         sigma[1,0] =  D_EL / np.sqrt(D_EE)
         sigma[1,1] =  np.sqrt( D_LL - D_EL**2 / D_EE)
 
-        #print(rf"D_EE = {D_EE:.3e}, D_LL = {D_LL:.3e}, D_EL = {D_EL:.3e}, 2D={np.matmul(sigma, sigma.T)}")
-
+        #print(rf"D_EE = {D_EE:.3e}, D_LL = {D_LL:.3e}, D_EL = {D_EL:.3e}, D={np.matmul(sigma, sigma.T)}")
         return sigma
 
+class StellarDiffusionAna(StochasticForce):
+    """
+    The class for modeling stellar diffusion effects a la https://arxiv.org/pdf/1508.01390.pdf
+
+    This class should give the same result as the above, but here every integral is evaluated on the fly.
+    This takes a bit longer but is more accurate than the interpolation
+
+    Attributes:
+        stellarDistribution : imripy.halo.MatterHaloDF
+            Object describing the stellar distribution
+        E_m_s : float
+            The first mass moment of the stellar distribution
+        CoulombLogarithm : float
+            The CoulombLogarithm describing the strength of the scattering
+        n : int
+            The grid size for the energy grid in integration
+    """
+    name = "Stellar Diffusion2"
+
+    def __init__(self, hs, stellarDistribution : imripy.halo.MatterHaloDF, E_m_s = c.solar_mass_to_pc,
+                 CoulombLogarithm=None):
+
+        super().__init__()
+        self.stellarDistribution = stellarDistribution
+
+        self.E_m_s = E_m_s
+        self.CoulombLogarithm = CoulombLogarithm or np.log(0.4 * hs.m1 / self.E_m_s)
+        self.kappa = (4.*np.pi*self.E_m_s)**2 * self.CoulombLogarithm
+        self.n = 200
+
+    def f(self, E):
+        return self.stellarDistribution.f(E) / self.E_m_s
+
+    def potential(self, r):
+        return self.stellarDistribution.potential(r)
+
+    def v_a(self, r, E_a):
+        return np.sqrt(2.*(self.potential(r) - E_a))
+
+    def D_E(self, hs, ko):
+        E = ko.m1 / 2. / ko.a
+        J = np.sqrt(ko.m1 * ko.a * (1.-ko.e**2))
+
+        def integrand_orbit(phi):
+            r, v = ko.get_orbital_parameters(phi)
+
+            E_to_phi = np.linspace(E, self.potential(r), self.n)
+            Z_to_E = np.linspace(0, E, self.n)
+            int1 = simpson((lambda E_a: self.v_a(r, E_a) / v * self.f(E_a))(E_to_phi), x=E_to_phi)
+            int2 = simpson((lambda E_a: self.f(E_a))(Z_to_E), x=Z_to_E)
+
+            deltaE = (ko.m2/self.E_m_s  * int1 - int2)
+            return deltaE / (1. + ko.e*np.cos(phi))**2
+
+        return (self.kappa * (1.-ko.e**2)**(3./2.)/2./np.pi
+                * quad(integrand_orbit, 0., 2.*np.pi)[0] )
+
+    def dE_dt(self, hs, ko, opt):
+        return  -ko.m2 * self.D_E(hs, ko)
+
+    def D_J(self, hs, ko):
+        a = ko.a; e = ko.e
+        E = ko.m1 / 2. / a
+        J = np.sqrt(ko.m1 * a * (1.-e**2))
+
+        def integrand_orbit(phi):
+            r, v = ko.get_orbital_parameters(phi)
+
+            E_to_phi = np.linspace(E, self.potential(r), self.n)
+            int1 = simpson((lambda E_a: self.v_a(r, E_a) / v * self.f(E_a))(E_to_phi), x=E_to_phi)
+            int3 = simpson((lambda E_a: self.v_a(r, E_a)**3 / v**3 * self.f(E_a))(E_to_phi), x=E_to_phi)
+
+            Z_to_E = np.linspace(0, E, self.n)
+            int2 = simpson((lambda E_a: self.f(E_a))(Z_to_E), x=Z_to_E)
+
+            deltaJ = ( -J/v**2 * (ko.m2 / self.E_m_s + 1.) * int1
+                           + r**2 / 6. / J * ( 2.* int2 + 3*int1 - int3 )
+                     )
+            return deltaJ / (1. + ko.e*np.cos(phi))**2
+
+        return (self.kappa * (1.-ko.e**2)**(3./2.)/2./np.pi
+                    * quad(integrand_orbit, 0., 2.*np.pi)[0]  )
+
+    def dL_dt(self, hs, ko, opt):
+        return -ko.m2 * self.D_J(hs, ko)
+
+    def D_EE_(self, hs, ko):
+        J = np.sqrt(ko.m1 * ko.a * (1.-ko.e**2))
+        E = ko.m1 / 2. / ko.a
+
+        def integrand_deps2(phi):
+            r, v = ko.get_orbital_parameters(phi)
+
+            E_to_phi = np.linspace(E, self.potential(r), self.n)
+            Z_to_E = np.linspace(0, E, self.n)
+            int3 = simpson((lambda E_a: self.v_a(r, E_a)**3 / v**3 * self.f(E_a))(E_to_phi), x=E_to_phi)
+            int2 = simpson((lambda E_a: self.f(E_a))(Z_to_E), x=Z_to_E)
+
+            deps2 = 2./3.* v**2 * (int3 + int2)
+            return deps2 / (1. + ko.e*np.cos(phi))**2
+
+        return ( self.kappa * (1.-ko.e**2)**(3./2.)/2./np.pi
+                 * quad(integrand_deps2, 0., 2.*np.pi)[0] )
+
+    def D_JJ(self, hs, ko):
+        J = np.sqrt(ko.m1 * ko.a * (1.-ko.e**2))
+        E = ko.m1 / 2. / ko.a
+
+        def integrand_dJ2(phi):
+            r, v = ko.get_orbital_parameters(phi)
+
+            E_to_phi = np.linspace(E, self.potential(r), self.n)
+            Z_to_E = np.linspace(0, E, self.n)
+            int1 = simpson((lambda E_a: self.v_a(r, E_a) / v * self.f(E_a))(E_to_phi), x=E_to_phi)
+            int3 = simpson((lambda E_a: self.v_a(r, E_a)**3 / v**3 * self.f(E_a))(E_to_phi), x=E_to_phi)
+            int2 = simpson((lambda E_a: self.f(E_a))(Z_to_E), x=Z_to_E)
+
+            dJ2 = 1./v**2 * ( J**2 * int3
+                            - J**2 * int1
+                            + r**2 * v**2 / 3. * (3.*int1 - int3)
+                            + 2./3. * r**2 * v**2 * int2
+                     )
+            return dJ2 / (1. + ko.e*np.cos(phi))**2
+
+        return (self.kappa * (1.-ko.e**2)**(3./2.) /2./np.pi
+                 * quad(integrand_dJ2, 0., 2.*np.pi)[0] )
+
+    def D_EJ(self, hs, ko):
+        J = np.sqrt(ko.m1 * ko.a * (1.-ko.e**2))
+        E = ko.m1 / 2. / ko.a
+
+        def integrand_dJdeps(phi):
+            r, v = ko.get_orbital_parameters(phi)
+
+            E_to_phi = np.linspace(E, self.potential(r), self.n)
+            Z_to_E = np.linspace(0, E, self.n)
+            int3 = simpson((lambda E_a: self.v_a(r, E_a)**3 / v**3 * self.f(E_a))(E_to_phi), x=E_to_phi)
+            int2 = simpson((lambda E_a: self.f(E_a))(Z_to_E), x=Z_to_E)
+
+            dJdeps = -2./3. * J *( int3 + int2)
+            return dJdeps / (1. + ko.e*np.cos(phi))**2
+
+        return ( self.kappa * (1.-ko.e**2)**(3./2.)/2./np.pi
+                * quad(integrand_dJdeps, 0., 2.*np.pi)[0] )
+
+    def D_EE(self, hs, ko):
+        return ko.m2**2 * self.D_EE_(hs, ko)
+    def D_LL(self, hs, ko):
+        return ko.m2**2 *self.D_JJ(hs, ko)
+    def D_EL(self, hs, ko):
+        return ko.m2**2 * self.D_EJ(hs, ko)
 

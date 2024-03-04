@@ -27,33 +27,32 @@ class Stochastic:
                 List of the dissipative forces employed during the inspiral
             stochasticForces : list of forces.StochasticForces
                 List of the stochastic forces employed during the inspiral
+            ignoreStochasticContribution : bool
+                If True, the dW contribution will be set to zero in the SDE evolution - Primarily for testing purposes
             gwEmissionLoss : bool
                 These parameters are for backwards compatibility - Only applies if dissipativeForces=None - then forces.GWLoss is added to the list
             dynamicalFrictionLoss : bool
-                These parameters are for backwards compatibility - Only applies if dissipativeForces=None - then forces.GWLoss is added to the list
+                These parameters are for backwards compatibility - Only applies if dissipativeForces=None - then forces.DynamicalFriction is added to the list
             **kwargs : additional parameter
                 Will be saved in opt.additionalParameters and will be available throughout the integration
 
         """
         def __init__(self, accuracy=1e-10, verbose=1, elliptic=True, m2_change=False,
                                     dissipativeForces=None, gwEmissionLoss = True, dynamicalFrictionLoss = True,
-                                    stochasticForces=None,
+                                    stochasticForces=None, ignoreStochasticContribution = False, adaptiveStepSize=False,
                                     considerRelativeVelocities=False, progradeRotation = True,
                                     **kwargs):
             super().__init__(accuracy=accuracy, verbose=verbose, elliptic=elliptic, m2_change=m2_change,
                                 dissipativeForces=dissipativeForces, gwEmissionLoss=gwEmissionLoss, dynamicalFrictionLoss=dynamicalFrictionLoss,
                                 considerRelativeVelocities=considerRelativeVelocities, progradeRotation=progradeRotation,
                                 **kwargs)
-            self.stochasticForces = stochasticForces or []
+            # Overwrite changes made by parent class
+            self.dissipativeForces = dissipativeForces
+            self.stochasticForces = stochasticForces
+            self.ignoreStochasticContribution = ignoreStochasticContribution
+            self.adaptiveStepSize = adaptiveStepSize
 
 
-        def __str__(self):
-            s = Classic.EvolutionOptions.__str__(self)
-            s += " - Stochastic Forces: {"
-            for sf in self.stochasticForces:
-                s += str(sf) + ", "
-            s += "}"
-            return s
 
 
     def dEdL_diffusion(hs, ko, opt=EvolutionOptions()):
@@ -106,7 +105,7 @@ class Stochastic:
         if opt.verbose > 3:
             print(rf"a={a:.3e}, e={e:.3e}, E={E:.3e}, L={L:.3e}")
 
-        dade_dEdL = np.array([[- a / E, 0.],
+        dade_dEdL = -np.array([[- a / E, 0.],
                               [ (e**2 - 1)/ (2.*e*E) , (e**2 - 1)/ (e*L)]] ) # The Jacobian del(a,e)/del(E,L)
 
         sigma = Stochastic.dEdL_diffusion(hs, ko, opt=opt)
@@ -115,16 +114,16 @@ class Stochastic:
         if opt.verbose > 3:
             print(rf"dade_dEdL={dade_dEdL}, sigma={sigma}, sigma_prime={sigma_prime}")
 
-        D = np.matmul(sigma, sigma.T) /2.
+        D = np.matmul(sigma, sigma.T)
 
         pref = 2./ko.m_red**3 / ko.m_tot**2
-        Ha = np.array([[2.*a/E**2, 0.], [0., 0.]])  # The Hessian of a
-        He = np.array([[ - pref**2 * L**4 / 4. / e**3, pref*L * (e**2 + 1) / 2. / e**3],
+        Ha = -np.array([[2.*a/E**2, 0.], [0., 0.]])  # The Hessian of a
+        He = -np.array([[ - pref**2 * L**4 / 4. / e**3, pref*L * (e**2 + 1.) / 2. / e**3],
                         [0., pref * E / e**3]])
         He[1,0] = He[0,1]
 
-        da_dt_prime = da_dt + np.sum(D*Ha) # elementwise multiplication
-        de_dt_prime = de_dt + np.sum(D*He)
+        da_dt_prime = da_dt + np.sum(D*Ha) / 2. # elementwise multiplication
+        de_dt_prime = de_dt + np.sum(D*He) / 2.
 
         if opt.verbose > 3:
             print(rf"D={D}, Ha={Ha}, D*Ha={D*Ha}, np.sum(D*Ha)={np.sum(D*Ha)}")
@@ -249,6 +248,8 @@ class Stochastic:
                            + rf"\\t elapsed real time: { toc-tic :0.4f} s")
 
                 dy_dW[0,0]/= a_scale
+                if self.opt.ignoreStochasticContribution:
+                    dy_dW = np.zeros(np.shape(dy_dW))
                 dy_dt = np.array([[da_dt/a_scale, de_dt]])
                 return dy_dt * t_scale, dy_dW*np.sqrt(t_scale)   # TODO : Check scaling
 
@@ -313,9 +314,9 @@ class Stochastic:
         sde = SDE()
         with torch.no_grad():
             # adaptive
-            ts, sol, events = torchsde.solve_sde(sde, y0, tspan, method='euler', events=events, adaptive=True, rtol=opt.accuracy, atol=opt.accuracy, dt_min=dt_min, dt=dt)
+            ts, sol, events = torchsde.solve_sde(sde, y0, tspan, method='euler', events=events, adaptive=opt.adaptiveStepSize,
+                                                            rtol=opt.accuracy, atol=opt.accuracy, dt_min=dt_min, dt=dt)
 
-            #ts, sol, events = torchsde.solve_sde(sde, y0, tspan, method='euler', events=events, adaptive=False, rtol=opt.accuracy, atol=opt.accuracy, dt_min=dt_min, dt=dt)
         toc = time.perf_counter()
 
         # Collect results
@@ -332,3 +333,4 @@ class Stochastic:
             print(f" -> Evolution took {toc-tic:.4f}s")
 
         return evs if len(evs) > 1 else evs[0]
+

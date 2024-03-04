@@ -58,13 +58,26 @@ class Classic:
             self.verbose = verbose
             self.elliptic = elliptic
             self.m2_change = m2_change
+
+            # check dissipative forces
             if dissipativeForces is None:
                 dissipativeForces = []
                 if gwEmissionLoss:
                     dissipativeForces.append(forces.GWLoss())
                 if dynamicalFrictionLoss:
                     dissipativeForces.append(forces.DynamicalFriction())
+
+            # this is for the forces that provide da/dt, de/dt, instead of dE/dt, dL/dt, for example in stochasticForce cases
+            stochasticForces = []
+            for f in dissipativeForces:
+                if hasattr(f, 'da_dt') and hasattr(f, 'de_dt'):
+                    stochasticForces.append(f)
+            for f in stochasticForces:
+                dissipativeForces.remove(f)
+
             self.dissipativeForces = dissipativeForces
+            self.stochasticForces = stochasticForces
+
             self.considerRelativeVelocities = considerRelativeVelocities
             self.progradeRotation = progradeRotation
             self.periapsePrecession = periapsePrecession
@@ -80,7 +93,12 @@ class Classic:
             s = "Options: dissipative forces employed {"
             for df in self.dissipativeForces:
                 s += str(df) + ", "
+            s += "} - Stochastic Forces: {"
+            for sf in self.stochasticForces:
+                s += str(sf) + ", "
             s += "}" + f", accuracy = {self.accuracy:.1e}"
+            s += ", with periapse precession" if self.periapsePrecession else ""
+            s += ", with inclination change" if self.inclinationChange else ""
             for key, value in self.additionalParameters.items():
                 s += f", {key}={value}"
             return s
@@ -135,7 +153,7 @@ class Classic:
                 The angular momentum of the Keplerian orbit
         """
         L = np.sqrt(ko.a * (1-ko.e**2) * ko.m_tot * ko.m_red**2 )
-        return L if ko.prograde else -L
+        return L
         #return np.sqrt( -(1. - e**2) * sp.m_reduced(a)**3 * sp.m_total(a)**2 / 2. / Classic.E_orbit(sp, a, e))
 
 
@@ -226,8 +244,7 @@ class Classic:
 
     def da_dt(hs, ko, opt=EvolutionOptions(), return_dE_dt=False):
         """
-        The function gives the secular time derivative of the semimajor axis a (or radius for a circular orbit) due to gravitational wave emission and dynamical friction
-            of the smaller object on a Keplerian orbit with semimajor axis a and eccentricity e
+        The function gives the secular time derivative of the semimajor axis a (or radius for a circular orbit) due to the dissipative forces
         The equation is obtained by the relation
             E = -m_1 * m_2 / 2a
 
@@ -246,16 +263,20 @@ class Classic:
         dE_dt = Classic.dE_dt(hs, ko, opt)
         dE_orbit_da = Classic.dE_orbit_da(hs, ko, opt)
 
-        if return_dE_dt:
-            return dE_dt / dE_orbit_da, dE_dt
+        da_dt = ( dE_dt / dE_orbit_da )
 
-        return    ( dE_dt / dE_orbit_da )
+        for f in opt.stochasticForces:
+            da_dt += f.da_dt(Classic, hs, ko, opt=opt)
+
+        if return_dE_dt:
+            return da_dt, dE_dt
+
+        return da_dt
 
 
     def de_dt(hs, ko, dE_dt=None, opt=EvolutionOptions()):
         """
-        The function gives the secular time derivative of the eccentricity due to gravitational wave emission and dynamical friction
-            of the smaller object on a Keplerian orbit with semimajor axis a and eccentricity e
+        The function gives the secular time derivative of the eccentricity due to the dissipative forces
         The equation is obtained by the time derivative of the relation
             e^2 = 1 + 2EL^2 / m_total^2 / m_reduced^3
            as given in Maggiore (2007)
@@ -278,11 +299,15 @@ class Classic:
         dL_dt = Classic.dL_dt(hs, ko, opt)
         L = Classic.L_orbit(hs, ko, opt)
 
+        de_dt = - (1.-ko.e**2)/2./ko.e *(  dE_dt/E + 2. * dL_dt/L   )
+
         if opt.verbose > 2:
             print("dE_dt/E=", dE_dt/E, "2dL_dt/L=", 2.*dL_dt/L, "diff=", dE_dt/E + 2.*dL_dt/L )
 
-        return - (1.-ko.e**2)/2./ko.e *(  dE_dt/E + 2. * dL_dt/L   )
+        for f in opt.stochasticForces:
+            de_dt += f.de_dt(Classic, hs, ko, opt=opt)
 
+        return de_dt
 
     def dperiapse_angle_dt(hs, ko, opt=EvolutionOptions()):
         """
@@ -379,7 +404,8 @@ class Classic:
         # set scales to get rescale integration variables
         a_scale = ko.a
         t_scale = t_fin
-        m_scale = ko.m2 if opt.m2_change else 1.
+        #m_scale = ko.m2 if opt.m2_change else 1.
+        m_scale = 1. # To be compatible with inside BH event
 
         t_step_max = t_fin
         if opt.verbose > 0:
@@ -418,7 +444,10 @@ class Classic:
         fin_reached = lambda t,y, *args: y[0] - a_fin/a_scale
         fin_reached.terminal = True
 
-        inside_BH = lambda t,y, *args: y[0]*a_scale * (1. - y[1]) - 8*hs.m1  # for a(1-e) < 8m_1
+        #def L_orbit(hs, ko, opt=EvolutionOptions()):
+        #L = np.sqrt(ko.a * (1-ko.e**2) * ko.m_tot * ko.m_red**2 )
+        inside_BH = lambda t,y, *args: np.sqrt(args[0].m1*y[0]*a_scale*(1.-y[1]**2)) - 4* args[0].m1  # J = sqrt(m1 a (1-e^2)) < 4 m1
+        #inside_BH = lambda t,y, *args: y[0]*a_scale * (1. - y[1]) - 8*hs.m1  # for a(1-e) < 8m_1
         inside_BH.terminal = True
 
         events = [fin_reached, inside_BH]
