@@ -35,7 +35,7 @@ class KeplerOrbit:
                 The angle of the ascending node
             periapse_angle    (float)
                 The angle of the point of periapse
-            prograde (Boolean)
+            prograde (Boolean)                  TODO: Deprecate
                 Whether the secondary is prograde wrt to some direction in the fundamental plane
         """
         self.hs = hs
@@ -46,6 +46,7 @@ class KeplerOrbit:
         self.inclination_angle = inclination_angle
         self.longitude_an = longitude_an
         self.prograde = prograde
+
 
     @staticmethod
     def from_xy_plane_to_rhophi_plane(v):
@@ -134,7 +135,7 @@ class KeplerOrbit:
         R = np.matmul(np.matmul(R3, R2), R1)
         return np.matmul(R.T, x) # transpose gives inverse
 
-    def get_orbital_vectors_in_orbital_xy_plane(self, phi):
+    def get_orbital_decomposition_in_orbital_xy_plane(self, phi):
         """
         Returns the Gaussian decomposition of the orbital vectors
         n points to the secondary, m orthogonal to that inside the orbital plane, k perpendicular to the plane
@@ -155,7 +156,7 @@ class KeplerOrbit:
         return n,m,k
 
     '''
-    def get_orbital_vectors_in_fundamental_xy_plane(self, phi):
+    def get_orbital_decomposition_in_fundamental_xy_plane(self, phi):
         """
         Returns the Gaussian decomposition of the orbital vectors
         n points to the secondary, m orthogonal to that inside the orbital plane, k perpendicular to the plane
@@ -170,14 +171,14 @@ class KeplerOrbit:
             (np.ndarray, np.ndarray, np.ndarray)
                 3  3d vectors n,m,k
         """
-        n,m,k = self.get_orbital_vectors_in_orbital_xy_plane(phi)
+        n,m,k = self.get_orbital_decomposition_in_orbital_xy_plane(phi)
         n = self.from_orbital_xy_plane_to_fundamental_xy_plane(n)
         m = self.from_orbital_xy_plane_to_fundamental_xy_plane(m)
         k = self.from_orbital_xy_plane_to_fundamental_xy_plane(k)
         return n,m,k
     '''
 
-    def get_orbital_vectors_in_fundamental_xy_plane(self, phi):
+    def get_orbital_decomposition_in_fundamental_xy_plane(self, phi):
         n = np.array([np.cos(self.longitude_an)*np.cos(self.periapse_angle + phi) - np.cos(self.inclination_angle)*np.sin(self.longitude_an)*np.sin(self.periapse_angle+phi),
                       np.sin(self.longitude_an)*np.cos(self.periapse_angle + phi) + np.cos(self.inclination_angle)*np.cos(self.longitude_an)*np.sin(self.periapse_angle+phi),
                       np.sin(self.inclination_angle)*np.sin(self.periapse_angle+phi)])

@@ -555,17 +555,19 @@ class Classic:
                 return kepler.KeplerOrbit(self.hs,
                                     self.m2[i] if isinstance(self.m2, (Sequence, np.ndarray)) else self.m2,
                                     self.a[i],
-                                    self.e[i] if isinstance(self.e, (Sequence, np.ndarray)) else self.e,
-                                    self.periapse_angle[i] if isinstance(self.periapse_angle, (Sequence, np.ndarray)) else self.periapse_angle,
-                                    self.longitude_an[i] if isinstance(self.longitude_an, (Sequence, np.ndarray)) else self.longitude_an,
-                                    prograde=self.prograde)
+                                    e   =   self.e[i] if isinstance(self.e, (Sequence, np.ndarray)) else self.e,
+                                    periapse_angle  =   self.periapse_angle[i] if isinstance(self.periapse_angle, (Sequence, np.ndarray)) else self.periapse_angle,
+                                    inclination_angle  =   self.inclination_angle[i] if isinstance(self.inclination_angle, (Sequence, np.ndarray)) else self.inclination_angle,
+                                    longitude_an    =   self.longitude_an[i] if isinstance(self.longitude_an, (Sequence, np.ndarray)) else self.longitude_an,
+                                    prograde    =   self.prograde)
             else:
                 return kepler.KeplerOrbit(self.hs,
                                     self.m2_int(i),
                                     self.a_int(i),
-                                    self.e_int(i),
-                                    self.periapse_angle_int(i),
-                                    self.longitude_an_int(i),
+                                    e   =   self.e_int(i),
+                                    periapse_angle  =   self.periapse_angle_int(i),
+                                    inclination_angle   =   self.inclination_angle_int(i),
+                                    longitude_an    =   self.longitude_an_int(i),
                                     prograde=self.prograde)
 
         def save(self, filename):
@@ -623,10 +625,10 @@ class Classic:
         def from_fundamental_xy_plane_to_orbital_xy_plane(self, x):
             raise NotImplementedError
 
-        def get_orbital_vectors_in_orbital_xy_plane(self, phi):
+        def get_orbital_decomposition_in_orbital_xy_plane(self, phi):
             raise NotImplementedError
 
-        def get_orbital_vectors_in_fundamental_xy_plane(self, phi):
+        def get_orbital_decomposition_in_fundamental_xy_plane(self, phi):
             raise NotImplementedError
 
         def get_orbital_vectors(self, phi):

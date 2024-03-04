@@ -256,7 +256,7 @@ class Spike(MatterHaloDF):
         U_in = - ( spikeMass(self.r_min) * (3. - self.alpha) / self.r_min / (2.-self.alpha)
                         * (self.M_bh - spikeMass(self.r_min)*(3.-self.alpha)/(5.-2.*self.alpha) ) )
         return - ( spikeMass(r) * (3.-self.alpha) / r
-                 * ( (self.M_bh - spikeMass(self.r_min))/(2.-self.alpha) + spikeMass(r)/(5.-2.*self.alpha)) ) + U_in
+                 * ( (self.M_bh - spikeMass(self.r_min))/(2.-self.alpha) + spikeMass(r)/(5.-2.*self.alpha))  + U_in)
 
     def __str__(self):
         """

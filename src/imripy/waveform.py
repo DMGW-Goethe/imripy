@@ -297,7 +297,7 @@ def h_projected(hs, ev, t_grid, phi_0=0., acc=1e-13):
     h_plus, h_cross = np.zeros(np.shape(t_grid)), np.zeros(np.shape(t_grid))
     for i, (t, phi) in enumerate(zip(t_grid, phi_grid)):
         ko = ev.get_kepler_orbit(t, interpolate=True)
-        n, m, _ = ko.get_orbital_vectors_in_fundamental_xy_plane(phi)
+        n, m, _ = ko.get_orbital_decomposition_in_fundamental_xy_plane(phi)
 
         h_jk = (- (1. + ko.e* np.cos(phi) - ko.e**2 * np.sin(phi)**2) * np.outer(n,n)
                 + ko.e*np.sin(phi) * (1.+ ko.e*np.cos(phi))*(np.outer(n,m) + np.outer(m,n))

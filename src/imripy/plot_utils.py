@@ -159,7 +159,7 @@ def plotDeltaN(hs, ev_0, ev_1, ax_dN, ax_di=None, n=2, acc=1e-13, plotFgw5year=F
 
 
 
-def streamline(ax, hs, opt, ko, a_grid, e_grid, cmap='plasma'):
+def streamline(ax, hs, opt, ko, a_grid, e_grid, cmap='plasma', **kwargs):
     """
     Plots the streamlines and their strength of the ode system in a and j space.
     a is the semimajor axis and j the specific angular momentum.
@@ -173,6 +173,7 @@ def streamline(ax, hs, opt, ko, a_grid, e_grid, cmap='plasma'):
         a_grid (np.array)               : The grid in semimajor axis a
         e_grid (np.array)               : The grid in eccentricity e
         cmap (plt colormap) (optional)  : A plt colormap or the identifying name
+        kwargs                          : Additional arguments passed to imshow, e.g. vmin/vmax
 
     Returns:
         out : matplotlib.image.AxesImage
@@ -180,12 +181,8 @@ def streamline(ax, hs, opt, ko, a_grid, e_grid, cmap='plasma'):
     """
     na = len(a_grid); ne = len(e_grid)
 
-    #a, j = np.meshgrid(a_grid, j_grid)
     a, e = np.meshgrid(a_grid, e_grid)
-    #e = np.sqrt(1. - j**2)
-    #e_grid = np.sqrt(1. - j_grid**2)
     da_grid = np.zeros(np.shape(a))
-    #dj_grid = np.zeros(np.shape(j))
     de_grid = np.zeros(np.shape(e))
 
     # Calculate Derivatives
@@ -195,24 +192,19 @@ def streamline(ax, hs, opt, ko, a_grid, e_grid, cmap='plasma'):
                 continue
             ko.a = a_grid[i]; ko.e = e[k,i]
             da_grid[k,i], dE_dt = inspiral.Classic.da_dt(hs, ko, opt=opt, return_dE_dt=True)
-            #dj_grid[k,i] = -e[k,i]/j[k,i] * inspiral.Classic.de_dt(hs, ko, dE_dt=dE_dt, opt=opt)
             de_grid[k,i] =  inspiral.Classic.de_dt(hs, ko, dE_dt=dE_dt, opt=opt)
 
     dloga = da_grid/a
-    #dlogj = dj_grid/j
     dlog1me = -de_grid/(1.-e)
     speed = np.sqrt(dlog1me**2 + dloga**2)
 
     # Plot Streamlines & Strength
     im = ax.imshow(speed.T, norm='log',
-                   #extent = [np.log10(j_grid[0]), np.log10(j_grid[-1]), np.log10(a_grid[0]/hs.r_isco), np.log10(a_grid[-1]/hs.r_isco)],
                    extent = [np.log10(1.-e_grid[0]), np.log10(1.-e_grid[-1]), np.log10(a_grid[0]/hs.r_isco), np.log10(a_grid[-1]/hs.r_isco)],
-                  origin = 'lower', interpolation='bilinear', aspect='auto', cmap=cmap, zorder=1)
-    #strm = ax.streamplot(np.log10(j_grid), np.log10(a_grid/hs.r_isco),
+                  origin = 'lower', interpolation='bilinear', aspect='auto', cmap=cmap, zorder=1, **kwargs)
     strm = ax.streamplot(np.log10(1-e_grid), np.log10(a_grid/hs.r_isco),
                   dlog1me.T, dloga.T, color='black', zorder=1)
     # Cover Loss cone
-    #ax.plot(np.log10(j_grid), np.log10(8./6./(1.-e_grid)), color='black', zorder=2)
     ax.plot(np.log10(1.-e_grid), np.log10(8./6./(1.-e_grid)), color='black', zorder=2)
     ax.fill_between(np.log10(1.-e_grid), np.log10(8./6./(1.-e_grid)), color='gray', alpha=1., zorder=2)
     return im

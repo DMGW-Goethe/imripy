@@ -95,7 +95,7 @@ class DissipativeForce:
         def integrand(phi):
             r, v = ko.get_orbital_vectors(phi)
             F = self.F(hs, ko, r, v, opt)
-            e_phi = ko.get_orbital_vectors_in_fundamental_xy_plane(phi)[1]
+            e_phi = ko.get_orbital_decomposition_in_fundamental_xy_plane(phi)[1]
             F_proj = np.sum(F*e_phi) * np.sqrt(np.sum(r*r))
             return F_proj / (1.+e*np.cos(phi))**2
         return -(1.-e**2)**(3./2.)/2./np.pi * quad(integrand, 0., 2.*np.pi, limit = 100)[0]
@@ -119,7 +119,7 @@ class DissipativeForce:
         def integrand(phi):
             r, v = ko.get_orbital_vectors(phi)
             F = self.F(hs, ko, r, v, opt)
-            e_z = ko.get_orbital_vectors_in_fundamental_xy_plane(phi)[2]
+            e_z = ko.get_orbital_decomposition_in_fundamental_xy_plane(phi)[2]
             W = np.sum(F*e_z) / ko.m2
             di_dt = np.sqrt(np.sum(r*r)) * np.cos(ko.periapse_angle + phi) * W / Omega / a**2 / np.sqrt(1-e**2)
             return  di_dt / (1.+e*np.cos(phi))**2
