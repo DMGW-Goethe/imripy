@@ -20,9 +20,13 @@ class DissipativeForce:
 
     Also contains functions for possible accretion of the secondary dm2_dt.
     Should be easily extendible.
+
+    Attributes:
+    name (string) : The name of the class
+    _use_da_dt (Boolean) : If true, uses da_dt, de_dt instead of dE_dt, dL_dt -> primarily useful for stochastic forces
     """
     name = "DissipativeForce"
-    m2_change = False
+    _use_da_dt = False
 
 
     def F(self, hs, ko, r, v, opt):
@@ -185,7 +189,6 @@ class DissipativeForceSS(DissipativeForce):
     And therefore not change the orbital plane
     """
     name = "DissipativeForceSS"
-    m2_change = False
 
 
     def F(self, hs, ko, r, v, opt):
@@ -589,7 +592,6 @@ class GasGeometricDrag(DissipativeForce):
 
 class AccretionLoss(DissipativeForceSS):
     name = "AccretionLoss"
-    m2_change = True
 
     def __init__(self, halo = None, accretionModel = 'Collisionless', withSoundspeed = False, includeRecoil=False):
         """
@@ -797,7 +799,7 @@ class GasInteraction(DissipativeForceSS):
         return F_gas
 
 
-class StochasticForce(DissipativeForce):
+class StochasticForce(DissipativeForceSS):
     """
     This class extends the dissipative force class
     to include a stochastic component that induces Brownian motion
@@ -806,6 +808,7 @@ class StochasticForce(DissipativeForce):
     See the Stochastic Solver for a thorough description
     """
     name = "StochasticForce"
+    _use_da_dt = True
 
     def da_dt(self, Classic, hs, ko, opt):
         """
@@ -916,11 +919,6 @@ class StochasticForce(DissipativeForce):
         #print(rf"D_EE = {D_EE:.3e}, D_LL = {D_LL:.3e}, D_EL = {D_EL:.3e}, D={np.matmul(sigma, sigma.T)}")
         return sigma
 
-    def dinclination_angle_dt(self, hs, ko, opt):
-        """
-        For now we assume the simple spherically symmetric case with no inclination change. Here, the formalism could be expanded
-        """
-        return 0.
 
 
 class StellarDiffusion(StochasticForce):

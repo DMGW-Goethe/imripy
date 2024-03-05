@@ -46,16 +46,26 @@ class Stochastic:
                                 dissipativeForces=dissipativeForces, gwEmissionLoss=gwEmissionLoss, dynamicalFrictionLoss=dynamicalFrictionLoss,
                                 considerRelativeVelocities=considerRelativeVelocities, progradeRotation=progradeRotation,
                                 **kwargs)
-            # Overwrite changes made by parent class
-            self.dissipativeForces = dissipativeForces
             self.stochasticForces = stochasticForces
+            for f in self.stochasticForces:
+                f._use_da_dt = False
+                self.dissipativeForces.append(f)
+
             self.ignoreStochasticContribution = ignoreStochasticContribution
             self.adaptiveStepSize = adaptiveStepSize
 
+        def __str__(self):
+            s = super().__str__()
+            s += "- Stochastic Forces: {"
+            for sf in self.stochasticForces:
+                s += str(sf) + ", "
+            s += '} - '
+            s += ('with' if self.adaptiveStepSize else 'without') + ' adaptive stepsize'
+            return s
 
 
 
-    def dEdL_diffusion(hs, ko, opt=EvolutionOptions()):
+    def dEdL_diffusion(hs, ko, opt):
         """
         The function gives the diffusion matrix of the SDE for the  energy and angular momentum
         The variances are on the diagonal and the covariance on the off-diagonal
@@ -84,7 +94,7 @@ class Stochastic:
 
 
 
-    def dade_diffusion(hs, ko, da_dt, de_dt, opt=EvolutionOptions()):
+    def dade_diffusion(hs, ko, da_dt, de_dt, opt):
         """
         This function gives the diffusion matrix of the SDE for the semimajor axis and eccentricity
         by taking the diffusion matrix for E and L and transforming it to a and e with the Jacobian.
@@ -156,8 +166,7 @@ class Stochastic:
         return hs, ko, a_fin, t_0, t_fin, opt
 
 
-    def Evolve(hs, ko, a_fin=0., t_0=0., t_fin=None, opt=EvolutionOptions(),
-               batch_size=1):
+    def Evolve(hs, ko, opt, a_fin=0., t_0=0., t_fin=None, batch_size=1):
         """
         The function evolves the SDE of the inspiraling system.
         The host system defines the central MBH and environment, the Keplerian Orbit the secondary on its orbit.
@@ -167,10 +176,10 @@ class Stochastic:
         Parameters:
             hs (HostSystem) : The host system object
             ko (KeplerOrbit): The Kepler orbit object describing the initial orbit
+            opt   (EvolutionOptions) : Collecting the options for the evolution of the differential equations
             a_fin (float)   : The semimajor axis at which to stop evolution
             t_0    (float)  : The initial time
             t_fin  (float)  : The time until the system should be evolved, if None then the estimated coalescence time will be used
-            opt   (EvolutionOptions) : Collecting the options for the evolution of the differential equations
             batch_size (int): Number of concurrent integrations
 
         Returns:
@@ -243,8 +252,8 @@ class Stochastic:
 
                 if self.opt.verbose > 2:
                     toc = time.perf_counter()
-                    print(rf"dy: t={t : 0.5e} ({t/t_scale:0.3e} t_scale), a={a : 0.3e}({a/hs.r_isco : 0.3e} r_isco)({a/a_fin:0.3e} a_fin), da/dt={da_dt : 0.3e}, da/dW={dy_dW[0,0]:0.3e}\\n"
-                          +  rf"\\t e={e : 0.3e}, de/dt={ de_dt : 0.3e}, de/dW={dy_dW[1,0] + dy_dW[1,1] : 0.3e}\\n"
+                    print(rf"dy: t={t : 0.5e} ({t/t_scale:0.3e} t_scale), a={ko.a : 0.3e}({ko.a/hs.r_isco : 0.3e} r_isco)({ko.a/a_fin:0.3e} a_fin), da/dt={da_dt : 0.3e}, da/dW={dy_dW[0,0]:0.3e}\\n"
+                          +  rf"\\t e={ko.e : 0.3e}, de/dt={ de_dt : 0.3e}, de/dW={dy_dW[1,0] + dy_dW[1,1] : 0.3e}\\n"
                            + rf"\\t elapsed real time: { toc-tic :0.4f} s")
 
                 dy_dW[0,0]/= a_scale

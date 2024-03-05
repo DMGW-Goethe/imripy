@@ -67,16 +67,7 @@ class Classic:
                 if dynamicalFrictionLoss:
                     dissipativeForces.append(forces.DynamicalFriction())
 
-            # this is for the forces that provide da/dt, de/dt, instead of dE/dt, dL/dt, for example in stochasticForce cases
-            stochasticForces = []
-            for f in dissipativeForces:
-                if hasattr(f, 'da_dt') and hasattr(f, 'de_dt'):
-                    stochasticForces.append(f)
-            for f in stochasticForces:
-                dissipativeForces.remove(f)
-
             self.dissipativeForces = dissipativeForces
-            self.stochasticForces = stochasticForces
 
             self.considerRelativeVelocities = considerRelativeVelocities
             self.progradeRotation = progradeRotation
@@ -92,10 +83,7 @@ class Classic:
         def __str__(self):
             s = "Options: dissipative forces employed {"
             for df in self.dissipativeForces:
-                s += str(df) + ", "
-            s += "} - Stochastic Forces: {"
-            for sf in self.stochasticForces:
-                s += str(sf) + ", "
+                s += str(df) + ('*' if df._use_da_dt else '') + ", "
             s += "}" + f", accuracy = {self.accuracy:.1e}"
             s += ", with periapse precession" if self.periapsePrecession else ""
             s += ", with inclination change" if self.inclinationChange else ""
@@ -154,7 +142,6 @@ class Classic:
         """
         L = np.sqrt(ko.a * (1-ko.e**2) * ko.m_tot * ko.m_red**2 )
         return L
-        #return np.sqrt( -(1. - e**2) * sp.m_reduced(a)**3 * sp.m_total(a)**2 / 2. / Classic.E_orbit(sp, a, e))
 
 
     def dE_dt(hs, ko, opt=EvolutionOptions()):
@@ -173,7 +160,7 @@ class Classic:
         """
         dE_dt_tot = 0.
         dE_dt_out = ""
-        for df in opt.dissipativeForces:
+        for df in (df for df in opt.dissipativeForces if not df._use_da_dt):
             dE_dt = df.dE_dt(hs, ko, opt)
             dE_dt_tot += dE_dt
             if opt.verbose > 2:
@@ -200,7 +187,7 @@ class Classic:
         """
         dL_dt_tot = 0.
         dL_dt_out = ""
-        for df in opt.dissipativeForces:
+        for df in (df for df in opt.dissipativeForces if not df._use_da_dt):
             dL_dt = df.dL_dt(hs, ko, opt)
             dL_dt_tot += dL_dt
             if opt.verbose > 2:
@@ -229,8 +216,6 @@ class Classic:
         dm2_dt_tot = 0.
         dm2_dt_out = ""
         for df in opt.dissipativeForces:
-            if not df.m2_change:
-                continue
             dm2_dt = df.dm2_dt_avg(hs, ko, opt)
             dm2_dt_tot += dm2_dt
             if opt.verbose > 2:
@@ -265,8 +250,8 @@ class Classic:
 
         da_dt = ( dE_dt / dE_orbit_da )
 
-        for f in opt.stochasticForces:
-            da_dt += f.da_dt(Classic, hs, ko, opt=opt)
+        for df in (df for df in opt.dissipativeForces if df._use_da_dt):
+            da_dt += df.da_dt(Classic, hs, ko, opt=opt)
 
         if return_dE_dt:
             return da_dt, dE_dt
@@ -304,8 +289,8 @@ class Classic:
         if opt.verbose > 2:
             print("dE_dt/E=", dE_dt/E, "2dL_dt/L=", 2.*dL_dt/L, "diff=", dE_dt/E + 2.*dL_dt/L )
 
-        for f in opt.stochasticForces:
-            de_dt += f.de_dt(Classic, hs, ko, opt=opt)
+        for df in (df for df in opt.dissipativeForces if df._use_da_dt):
+            de_dt += df.de_dt(Classic, hs, ko, opt=opt)
 
         return de_dt
 
