@@ -13,13 +13,15 @@ class MatterHalo:
 
     Attributes:
         r_min (float): An minimum radius below which the density is always 0, this is initialized to 0
+        name (String) : A name for the halo
     """
 
-    def __init__(self):
+    def __init__(self, name=""):
         """
         The constructor for the MatterHalo class
         """
         self.r_min = 0.
+        self.name = name
 
     def density(self, r):
         """
@@ -77,7 +79,7 @@ class MatterHalo:
             out : string
                 The string representation
         """
-        return "MatterHalo"
+        return "MatterHalo" if not self.name else self.name
 
 
 
@@ -90,7 +92,7 @@ class ConstHalo(MatterHalo):
         rho_0 (float): The constant density of the halo
     """
 
-    def __init__(self, rho_0):
+    def __init__(self, rho_0, name=""):
         """
         The constructor for the ConstHalo class
 
@@ -98,7 +100,7 @@ class ConstHalo(MatterHalo):
             rho_0 : float
                 The constant density of the halo
         """
-        MatterHalo.__init__(self)
+        MatterHalo.__init__(self, name)
         self.rho_0 = rho_0
 
     def density(self, r):
@@ -138,7 +140,7 @@ class ConstHalo(MatterHalo):
             out : string
                 The string representation
         """
-        return "ConstHalo"
+        return "ConstHalo" if not self.name else self.name
 
 
 class InterpolatedHalo(MatterHalo):
@@ -165,10 +167,9 @@ class InterpolatedHalo(MatterHalo):
             name : string  (optional)
                 The name of the halo being interpolated
         """
-        MatterHalo.__init__(self)
+        MatterHalo.__init__(self, name)
         self.r_grid = r_grid
         self.density_grid = density_grid
-        self.name = name
 
     def density(self, r):
         """
@@ -194,23 +195,89 @@ class InterpolatedHalo(MatterHalo):
             out : string
                 The string representation
         """
-        return "InterpolatedHalo" + ( (" (" + self.name + ")") if len(self.name) > 0 else "")
+        return "InterpolatedHalo" + ( (" (" + self.name + ")") if self.name else "")
 
+
+class CombinedHalo(MatterHalo):
+    """
+    A class describing a linear combination of several halo objects
+
+    Attributes:
+        r_min (float): An minimum radius below which the density is always 0, this is initialized to 0
+        halos (list of MatterHalo) : The list of halos combined
+        name   (string)     : The name of the halo being interpolated
+    """
+
+    def __init__(self, halos, name=""):
+        """
+        The constructor for the CombinedHalo class
+
+        Parameters:
+            r_grid : array_like
+                The grid of radii
+            halos : list of MatterHalo
+                The list of halos
+            name : string  (optional)
+                The name of the halo being interpolated
+        """
+        MatterHalo.__init__(self, name)
+        self.halos = halos
+
+    def density(self, r):
+        """
+        The density of the combined halo
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the density
+
+        Returns:
+            out : float or array_like (depending on r)
+                The density at the radius r
+        """
+        return np.sum([h.density(r) for h in self.halos], axis=0)
+
+    def mass(self, r):
+        """
+        The mass of the combined halo
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the density
+
+        Returns:
+            out : float or array_like (depending on r)
+                The density at the radius r
+        """
+        return np.sum([h.mass(r) for h in self.halos], axis=0)
+
+    def __str__(self):
+        """
+        Gives the string representation of the object
+
+        Returns:
+            out : string
+                The string representation
+        """
+        return "CombinedHalo("  + ''.join([str(h)+',' for h in self.halos]) + ")"
 
 
 class MatterHaloDF(MatterHalo):
     """
-    A placeholder class describing a spherically symmetric halo profile given a distribution function f inside a potential Phi
+    A class describing a spherically symmetric halo profile given a distribution function f inside a potential Phi
     The density is given by
         rho(r) = 4 \pi \int_0^v_max   v**2 * f(Phi(r) - v**2 /2)  dv
     """
 
-    def __init__(self):
+    def __init__(self, name=""):
         """
-        The constructor for the MatterHaloDF class
+        The constructor for the MatterHalo class
 
+        Parameters:
+            potential : callable(r)
+                A reference to a callable function of r that gives the potential Phi
         """
-        MatterHalo.__init__(self)
+        MatterHalo.__init__(self, name)
 
     def f(self, Eps):
         """
@@ -257,14 +324,14 @@ class MatterHaloDF(MatterHalo):
         pass
         '''
         # Alternative calculaltion without interpolation
-        if not isinstance(Eps, (Sequence, np.ndarray)):
+        if not isinstance(Eps, (collections.Sequence, np.ndarray)):
             return 16.*np.pi**2 * quad(lambda r: r**2 * np.sqrt(2.*self.potential(r) - 2.*Eps), 0., self.r_of_Eps(Eps))[0]
         return 16.*np.pi**2 *np.array([quad(lambda r: r**2 * np.sqrt(2.*self.potential(r) - 2.*Eps), 0., self.r_of_Eps(Eps))[0]  for Eps in Eps])
         '''
 
     def density(self, r, v_max = None):
         """
-        The density function of the halo depending on the distribution function
+        The density function of the dynamic halo depending on the distribution function
         The density is given by
             rho(r) = 4 \pi \int_0^v_max   v**2 * f(Phi(r) - v**2 /2)  dv
 
@@ -285,13 +352,13 @@ class MatterHaloDF(MatterHalo):
 
         if v_max is None:
             v_max = np.sqrt(2*self.potential(r))
-        if not isinstance(r, (Sequence, np.ndarray)):
+        if not isinstance(r, (collections.Sequence, np.ndarray)):
             v2_list = np.linspace(0., v_max**2, 3000)
             f_list = self.f(self.potential(r) - 0.5*v2_list)
             return 4.*np.pi*simps(v2_list * f_list, x=np.sqrt(v2_list))
             #return 4.*np.pi*quad(lambda v: v**2 * self.f(self.potential(r) - v**2 /2.), 0., v_max, limit=200)[0]
 
-        if not isinstance(v_max, (Sequence, np.ndarray)):
+        if not isinstance(v_max, (collections.Sequence, np.ndarray)):
             v_max = np.ones(len(r))*v_max
         v_max = np.clip(v_max, 0., np.sqrt(2*self.potential(r)))
         return np.array([self.density(r, v) for r,v in zip(r, v_max) ])
@@ -306,7 +373,7 @@ class MatterHaloDF(MatterHalo):
             out : string
                 The string representation
         """
-        return "MatterHaloDF"
+        return "MatterHaloDF" if not self.name else self.name
 
 
 class DynamicSS(MatterHaloDF):
@@ -325,7 +392,7 @@ class DynamicSS(MatterHaloDF):
         interpolate_density: Whether to interpolate the density once and call that instead of recomputing  # TODO
     """
 
-    def __init__(self, Eps_grid, f_grid, potential, interpolate_density=False):
+    def __init__(self, Eps_grid, f_grid, potential, interpolate_density=False, name=""):
         """
         The constructor for the DynamicSS class
 
@@ -339,7 +406,7 @@ class DynamicSS(MatterHaloDF):
             interpolate_density : Boolean
                 Whether to precompute and later interpolate the density function instead of doing the integral over f each time
         """
-        MatterHaloDF.__init__(self)
+        MatterHaloDF.__init__(self, name)
         self.Eps_grid = Eps_grid
         self.f_grid = f_grid
         self.potential = potential
@@ -504,7 +571,7 @@ class DynamicSS(MatterHaloDF):
         """"
         This function takes a MatterHalo or MatterHaloDF object and makes a grid in f over the given Eps_grid
         If it is a MatterHaloDF object, f is taken from the analytic equations.
-        If it is a MatterHalo object, f is calculated through the Eddingtion inversion procedure, see the EddingtonInversion function
+        If it is a MatterHalo object, f is calculated through the Eddingtion inversion procedure, see the text in EddingtonInversion
 
         Parameters:
             Eps_grid : array_like
@@ -553,4 +620,4 @@ class DynamicSS(MatterHaloDF):
             out : string
                 The string representation
         """
-        return "DynamicSS"
+        return "DynamicSS" if not self.name else self.name

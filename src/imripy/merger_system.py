@@ -3,6 +3,105 @@ import imripy.cosmo as cosmo
 import imripy.halo as halo
 #from scipy.constants import G, c
 
+class HostSystem:
+    """
+    Defines the host system of the central MBH m1 with a halo of stuff around.
+    Defines the fundamental plane of the system, to which the inclination angle, pericenter angle and luminosity distance are wrt to an observer
+
+    TODO: Implement handling of the position of the fundamental plane to the observer
+    """
+    def __init__(self, m1, halo=halo.ConstHalo(0.), D_l = 1., inclination_angle=0., pericenter_angle=0., includeHaloInTotalMass=False):
+        self.m1 = m1
+        self.D_l = D_l
+
+        self.halo = halo
+        self.halo.r_min = self.r_isco if halo.r_min == 0. else halo.r_min
+
+        self.inclination_angle = inclination_angle
+        self.pericenter_angle = pericenter_angle
+
+        self.includeHaloInTotalMass = includeHaloInTotalMass
+
+    @property
+    def r_isco(self):
+        """
+        The function returns the radius of the Innermost Stable Circular Orbit (ISCO) of a Schwarzschild black hole with mass m1
+
+        Returns:
+            out : float
+                The radius of the ISCO
+        """
+        return 6.*self.m1
+
+    @property
+    def r_schwarzschild(self):
+        """
+        The function returns the Schwarzschild radius of a Schwarzschild black hole with mass m1
+
+        Returns:
+            out : float
+                The Schwarzschild radius
+        """
+        return 2.*self.m1
+
+    @property
+    def z(self):
+        """
+        The function returns the redshift as a measure of distance to the system
+        According to the Hubble Law
+
+        Returns:
+            out : float
+                The redshift of the system
+        """
+        return cosmo.HubbleLaw(self.D_l)
+
+    def mass(self, r):
+        """
+        The function returns the total mass enclosed in a sphere of radius r.
+            This includes the central mass and the mass of the matter halo if includeHaloInTotalMass=True
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the mass
+
+        Returns:
+            out : float or array_like (depending on r)
+                The enclosed mass
+        """
+        return np.ones(np.shape(r))*self.m1 + (self.halo.mass(r) if self.includeHaloInTotalMass else 0.)
+
+    def dmass_dr(self, r):
+        """
+        The function returns the derivative of the total mass enclosed in a sphere of radius r.
+            This derivative stems from the mass of the matter halo and is only nonzero if includeHaloInTotalMass=True
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the mass derivative
+
+        Returns:
+            out : float or array_like (depending on r)
+                The enclosed mass derivative
+        """
+        return 4.*np.pi*r**2 * self.halo.density(r) if self.includeHaloInTotalMass else 0.
+
+
+    def omega_s(self, r):
+        """
+        The function returns the angular frequency of a test mass in a circular orbit around the central mass with the matter halo around it
+
+        Parameters:
+            r : float or array_like
+                The radius at which to evaluate the orbital frequency
+
+        Returns:
+            out : float or array_like (depending on r)
+                The orbital frequency
+        """
+        return np.sqrt(self.mass(r)/r**3)
+
+
 
 
 class SystemProp:
@@ -17,7 +116,7 @@ class SystemProp:
     """
 
 
-    def __init__(self, m1, m2, halo, D=1., inclination_angle = 0., pericenter_angle=0., baryonicHalo=None, includeHaloInTotalMass=False):
+    def __init__(self, m1, m2, halo=halo.ConstHalo(0.), D=1., inclination_angle = 0., pericenter_angle=0., baryonicHalo=None, includeHaloInTotalMass=False):
         """
         The constructor for the SystemProp class
 
@@ -55,25 +154,6 @@ class SystemProp:
         self.includeHaloInTotalMass = includeHaloInTotalMass
 
 
-    def r_isco(self):
-        """
-        The function returns the radius of the Innermost Stable Circular Orbit (ISCO) of a Schwarzschild black hole with mass m1
-
-        Returns:
-            out : float
-                The radius of the ISCO
-        """
-        return 6.*self.m1
-
-    def r_schwarzschild(self):
-        """
-        The function returns the Schwarzschild radius of a Schwarzschild black hole with mass m1
-
-        Returns:
-            out : float
-                The Schwarzschild radius
-        """
-        return 2.*self.m1
 
     def m_reduced(self, r=0.):
         """
@@ -141,6 +221,27 @@ class SystemProp:
         """
         return (1.+self.z()) * self.m_chirp()
 
+
+    def r_isco(self):
+        """
+        The function returns the radius of the Innermost Stable Circular Orbit (ISCO) of a Schwarzschild black hole with mass m1
+
+        Returns:
+            out : float
+                The radius of the ISCO
+        """
+        return 6.*self.m1
+
+    def r_schwarzschild(self):
+        """
+        The function returns the Schwarzschild radius of a Schwarzschild black hole with mass m1
+
+        Returns:
+            out : float
+                The Schwarzschild radius
+        """
+        return 2.*self.m1
+
     def z(self):
         """
         The function returns the redshift as a measure of distance to the system
@@ -155,7 +256,7 @@ class SystemProp:
     def mass(self, r):
         """
         The function returns the total mass enclosed in a sphere of radius r.
-            This includes the central mass and the mass of the dark matter halo if includeHaloInTotalMass=True
+            This includes the central mass and the mass of the matter halo if includeHaloInTotalMass=True
 
         Parameters:
             r : float or array_like
@@ -170,7 +271,7 @@ class SystemProp:
     def dmass_dr(self, r):
         """
         The function returns the derivative of the total mass enclosed in a sphere of radius r.
-            This derivative stems from the mass of the dark matter halo and is only nonzero if includeHaloInTotalMass=True
+            This derivative stems from the mass of the matter halo and is only nonzero if includeHaloInTotalMass=True
 
         Parameters:
             r : float or array_like
@@ -185,7 +286,7 @@ class SystemProp:
 
     def omega_s(self, r):
         """
-        The function returns the angular frequency of the smaller mass m2 in a circular orbit around the central mass with the dark matter halo around it
+        The function returns the angular frequency of a test mass in a circular orbit around the central mass with the matter halo around it
 
         Parameters:
             r : float or array_like
@@ -195,5 +296,6 @@ class SystemProp:
             out : float or array_like (depending on r)
                 The orbital frequency
         """
-        return np.sqrt((self.mass(r) + self.m2)/r**3)
+        return np.sqrt(self.mass(r)/r**3)
+
 
