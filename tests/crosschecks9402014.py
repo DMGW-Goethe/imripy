@@ -3,12 +3,15 @@ from scipy.interpolate import UnivariateSpline, interp1d
 from scipy.integrate import quad
 import matplotlib.pyplot as plt
 
-from imripy import merger_system as ms, halo, inspiral, waveform, detector
+from imripy import constants as c, merger_system as ms, halo, inspiral, waveform, detector
 
 solar_mass_in_pc = 4.8e-14
 year_in_pc = 0.3064
+m1 = 1e3 * c.solar_mass_to_pc
+m2 = 1. * c.solar_mass_to_pc
 
-sp = ms.SystemProp(1e3 *solar_mass_in_pc, 1. * solar_mass_in_pc, halo.ConstHalo(0.))
+sp = ms.SystemProp(m1, m2, halo.ConstHalo(0.))
+hs = ms.HostSystem(m1)
 
 print(sp.m_chirp(), sp.redshifted_m_chirp())
 
@@ -17,7 +20,7 @@ R_fin = sp.r_isco()
 #R_fin =  [15.*sp.r_isco, sp.r_isco]
 
 #t, R = inspiral.Classic.evolve_circular_binary(sp, R0, R_fin, acc=1e-8)
-ev = inspiral.Classic.Evolve(sp, R0, a_fin=R_fin, opt=inspiral.Classic.EvolutionOptions(accuracy=1e-8))
+ev = inspiral.Classic.Evolve_old(sp, R0, a_fin=R_fin, opt=inspiral.Classic.EvolutionOptions(accuracy=1e-8))
 omega_s = sp.omega_s(ev.R)
 f_gw = omega_s/np.pi
 omega_s_obs = omega_s/(1. + sp.z())
@@ -103,7 +106,7 @@ plt.legend(); plt.grid()
 
 plt.figure()
 f_gw0 = omega_s/np.pi
-f_gw, h, _, Psi, __, PsiTild, __ = waveform.h_2(sp, ev, dbg=True)
+f_gw, h, _, Psi, __, PsiTild, __ = waveform.h_2(hs, ev, dbg=True)
 
 Psi0 = 2.*np.pi*f_gw0 * (t_c0 + sp.D) - np.pi/4. + 3./4. * (8.*np.pi*sp.m_chirp()*f_gw0)**(-5./3.)
 plt.plot(f_gw*year_in_pc*3.17e-8, Psi, label=r'$\Psi^{code}$')

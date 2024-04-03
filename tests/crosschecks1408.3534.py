@@ -167,16 +167,19 @@ plt.figure()
 plotOmega_s(sp_1, 4./6.*sp_1.r_isco(), 1e4)
 plt.legend(); plt.grid()
 
-plt.figure()
-plotDiffEq(sp_1, sp_1.r_isco(), 1e7*sp_1.r_isco())
-plt.legend(); plt.grid()
+#plt.figure()
+#plotDiffEq(sp_1, sp_1.r_isco(), 1e7*sp_1.r_isco())
+#plt.legend(); plt.grid()
 
-plt.figure()
-plotPhiprimeprime(sp_1, sp_1.r_isco(), 1e5*sp_1.r_isco())
-plt.legend(); plt.grid()
+#plt.figure()
+#plotPhiprimeprime(sp_1, sp_1.r_isco(), 1e5*sp_1.r_isco())
+#plt.legend(); plt.grid()
 
+# adjustments to new formalism
+sp_1.D_l = sp_1.D
+sp_1.z = sp_1.z()
 R0 = 80.*sp_1.r_isco()
-ev = inspiral.Classic.Evolve(sp_1, R0, a_fin=sp_1.r_isco(), opt=evOpt)
+ev = inspiral.Classic.Evolve_old(sp_1, R0, a_fin=sp_1.r_isco(), opt=evOpt)
 omega_s = sp_1.omega_s(ev.R)
 
 plt.figure()

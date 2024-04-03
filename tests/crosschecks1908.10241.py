@@ -26,10 +26,10 @@ sp_3 = ms.SystemProp(m1, m2, halo.Spike(rho_spike, r_spike, 1.5),   D, inclinati
 
 evOpt = inspiral.Classic.EvolutionOptions(dissipativeForces={forces.GWLoss(), forces.DynamicalFriction(ln_Lambda=ln_Lambda)}, accuracy=1e-10, verbose=1)
 
-ev_0 = inspiral.Classic.Evolve(sp_0, a0, e0, a_fin=afin, opt=evOpt)
-ev_1 = inspiral.Classic.Evolve(sp_1, a0, e0, a_fin=afin, opt=evOpt)
-ev_2 = inspiral.Classic.Evolve(sp_2, a0, e0, a_fin=afin, opt=evOpt)
-ev_3 = inspiral.Classic.Evolve(sp_3, a0, e0, a_fin=afin, opt=evOpt)
+ev_0 = inspiral.Classic.Evolve_old(sp_0, a0, e0, a_fin=afin, opt=evOpt)
+ev_1 = inspiral.Classic.Evolve_old(sp_1, a0, e0, a_fin=afin, opt=evOpt)
+ev_2 = inspiral.Classic.Evolve_old(sp_2, a0, e0, a_fin=afin, opt=evOpt)
+ev_3 = inspiral.Classic.Evolve_old(sp_3, a0, e0, a_fin=afin, opt=evOpt)
 
 fig, (ax_p, ax_e) = plt.subplots(2, 1, figsize=(16,20))
 ax_p.plot(ev_0.t/c.year_to_pc, ev_0.a*(1.-ev_0.e**2)/sp_0.m1, label='0')

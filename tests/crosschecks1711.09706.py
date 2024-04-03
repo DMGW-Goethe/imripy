@@ -280,20 +280,22 @@ m1 = 1e5 *c.solar_mass_to_pc
 m2 = 10. *c.solar_mass_to_pc
 D = 1e3
 sp_1 = ms.SystemProp(m1, m2, halo.Spike( 226*c.solar_mass_to_pc, 0.54, 7./3.), D, includeHaloInTotalMass=True)
+sp_1.D_l = sp_1.D
+sp_1.z = sp_1.z()
 
-plt.figure()
-plotDiffEq(sp_1, sp_1.r_isco(), 1e7*sp_1.r_isco())
-plt.legend(); plt.grid()
+#plt.figure()
+#plotDiffEq(sp_1, sp_1.r_isco(), 1e7*sp_1.r_isco())
+#plt.legend(); plt.grid()
 
-plt.figure()
-plotPhiprimeprime(sp_1, sp_1.r_isco(), 1e5*sp_1.r_isco())
-plt.legend(); plt.grid()
+#plt.figure()
+#plotPhiprimeprime(sp_1, sp_1.r_isco(), 1e5*sp_1.r_isco())
+#plt.legend(); plt.grid()
 
 R0 = 100.*sp_1.r_isco()
 opt_nacc = inspiral.Classic.EvolutionOptions(accuracy=1e-13, dissipativeForces={forces.GWLoss(), forces.DynamicalFriction(ln_Lambda=ln_Lambda)}, verbose=1)
 opt_acc = inspiral.Classic.EvolutionOptions(accuracy=1e-13, m2_change = True, dissipativeForces={forces.GWLoss(), forces.DynamicalFriction(ln_Lambda=ln_Lambda), forces.AccretionLoss()}, verbose=1)
-ev_nacc = inspiral.Classic.Evolve(sp_1, R0, a_fin=sp_1.r_isco(), opt=opt_nacc)
-ev_acc = inspiral.Classic.Evolve(sp_1, R0, a_fin=sp_1.r_isco(), opt=opt_acc)
+ev_nacc = inspiral.Classic.Evolve_old(sp_1, R0, a_fin=sp_1.r_isco(), opt=opt_nacc)
+ev_acc = inspiral.Classic.Evolve_old(sp_1, R0, a_fin=sp_1.r_isco(), opt=opt_acc)
 
 plt.figure()
 plotPhase(sp_1, ev_acc, ev_nacc, f_c = 0.1*c.hz_to_invpc)
@@ -319,7 +321,7 @@ e0 = 1e-5
 sp_1.m2 = m2
 
 opt_acc.accuracy = 1e-12
-ev2 = inspiral.Classic.Evolve(sp_1, a0, e0, sp_1.r_isco(), opt=opt_acc)
+ev2 = inspiral.Classic.Evolve_old(sp_1, a0, e0, sp_1.r_isco(), opt=opt_acc)
 
 plt.figure()
 plt.loglog(ev_acc.t, ev_acc.R, label='R, circular')
