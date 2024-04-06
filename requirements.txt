@@ -1,0 +1,11 @@
+numpy==1.26.4
+scipy==1.13.0
+matplotlib==3.8.4
+matplotlib-inline==0.1.6
+
+# in case you want the Stochastic module
+torch==2.2.2
+-e git+ssh://git@github.com/google-research/torchsde.git@2c5d9dde7fcb97848f267eb41d3f980b5f0a2e39#egg=torchsde
+
+# and in case you´d like some parralel executions
+mpi4py==3.1.5

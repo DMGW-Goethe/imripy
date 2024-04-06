@@ -61,7 +61,7 @@ def plotEvolution(hs, ev, ax_a=None, ax_e=None, label="", ax_ae=None, ax_1mea=No
         color = l.get_c()
     return l
 
-def plotGWcharacteristicStrain(hs, ev, ax_h, label="", acc=1e-13, harmonics=[2], color=None, **kwargs):
+def plotGWcharacteristicStrain(hs, ev, ax_h, label="", acc=1e-13, harmonics=[2], **kwargs):
     """
     Plots the characteristic strain in its harmonics in the natural units that are used throughout the code.
     The lines will have the same color and alternating linestyle
@@ -72,17 +72,14 @@ def plotGWcharacteristicStrain(hs, ev, ax_h, label="", acc=1e-13, harmonics=[2],
         ax_h (plt.axes)                 : The axes on which to plot characteristic strain / frequency
         harmonics (list of integers)    : The list of harmonics to be plotted
         label (string)      (optional)  : The label corresponding to the lines
-        color               (optional)  : The color of the lines. Can be anything that matplotlib accepts as color
         **kwargs                        : Other parameters that can be passed to the plotting
     """
     linecycler = cycle(["-", "--", "-.", ":"])
-    color_cycle = ax_h._get_lines.prop_cycler
     l = None
-    col = color if not color is None else next(color_cycle)['color']
     for n in harmonics:
         wf = waveform.h_n(n, hs, ev, acc=acc)
         l, = ax_h.loglog(wf[0]/c.hz_to_invpc, 2.*wf[0]*np.abs(wf[1]), linestyle=next(linecycler),
-                                 label=label.format(n) if "{0}" in label else label, color=col, **kwargs)
+                                 label=label.format(n) if "{0}" in label else label,  **kwargs)
 
 
 def plotLastTyears(hs, ev, ax, t=5.*c.year_to_pc, n=2, marker=None, y=None, **kwargs):
