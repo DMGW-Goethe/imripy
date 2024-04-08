@@ -6,3 +6,4 @@ from . import inspiral
 from . import waveform
 from . import detector
 from . import plot_utils
+from . import animate
