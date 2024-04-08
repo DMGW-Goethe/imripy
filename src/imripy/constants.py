@@ -17,6 +17,8 @@ year_to_pc = 0.3064
 m_to_pc = 3.241e-17
 # solar mass to pc
 solar_mass_to_pc = 4.8e-14
+# kg to pc
+kg_to_pc = 5e-31 * solar_mass_to_pc
 # gram / cubic centimeter (density) to 1/pc^2
 g_cm3_to_invpc2 = 7.072e8
 # gram / centimeter squared (surface density) to 1/pc
